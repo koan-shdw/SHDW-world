@@ -110,6 +110,8 @@ The card code (`Card.svelte`) stays for the widget and panels but nothing is dra
 Every hang rule and key from gate 1 through R4 (1-9 0 , . [ ] scroll, Tab, 3 m reach, hands view H, Delete, arrows,
 undo, Q), the looks and dials, the loader, the file format, the draft, Yozo's path.
 
+**BUILT 2026-09-06**, live on main, one pass: mark, crosshair + prompt line, hotbar (ten slots, window keeps the held one in view), hands slot, `e · interact` on the work, the touch menu (move · take down · swap · turn · align this wall · align all · sculpture look rows), the wall widget riding the ghost, options on Esc (level · looks · file · theme · keys · about, `back` relocks the mouse), name SHDW.world (title, mark, embed `window.__shdwWorld`, layout default name). Old cards, top strip, modes: gone. PROVEN on localhost by script and screenshot: hold from the bar, hang, touch → swap / move / take down, undo, widget, options. OPEN: his play; repo rename.
+
 ## 10. Order
 
 1. Spec read, corrected, GO.

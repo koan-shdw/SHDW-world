@@ -1,28 +1,28 @@
-// UI state (REMAKE.md §2): what the UI knows, fed by the bus. Svelte 5 runes. The UI never imports world/.
-import { bus, type Mode, type Look, type FxState, type Quality, type RoomInfo, type WalkSnapshot, type HudSnapshot, type ArtSnapshot, type LoaderState, type ToastKind } from '../bus'
+// UI state (REMAKE.md §2, GAME-UI): what the HTML layer knows, fed by the bus. Svelte 5 runes. The UI never imports world/.
+import { bus, type Look, type RoomInfo, type WalkSnapshot, type HudSnapshot, type ArtSnapshot, type LoaderState, type ToastKind, type FxState, type Quality, type TouchSnapshot } from '../bus'
 
 export interface Toast { id: number; msg: string; kind: ToastKind }
 
 export const ui = $state({
-  mode: 'walk' as Mode,
   look: 'textured' as Look,
   fx: null as FxState | null,
   quality: 'full' as Quality,
   room: null as RoomInfo | null,
   failed: null as string | null,
   walk: null as WalkSnapshot | null,
-  hud: { hint: 'walk', cross: false, doorTip: null, hangTip: null } as HudSnapshot,
+  hud: { hint: 'play', cross: false, doorTip: null, hangTip: null } as HudSnapshot,
   art: null as ArtSnapshot | null,
   loader: { active: false, done: 0, total: 0, text: '' } as LoaderState,
   mapShown: false,
-  helpShown: false,
+  menuShown: false,
+  menuTab: 'level',
+  touch: null as TouchSnapshot | null,
   debugShown: false,
   toasts: [] as Toast[],
   anchors: {} as Record<string, { x: number; y: number; visible: boolean; text?: string }>,
 })
 
 let toastSeq = 0
-bus.on('mode', ({ mode }) => { ui.mode = mode })
 bus.on('look', ({ look }) => { ui.look = look })
 bus.on('fx', ({ state }) => { ui.fx = state })
 bus.on('quality', ({ quality }) => { ui.quality = quality })
@@ -33,8 +33,8 @@ bus.on('hud', (h) => { ui.hud = h })
 bus.on('art_state', (a) => { ui.art = a })
 bus.on('loader', (l) => { ui.loader = l })
 bus.on('map_show', ({ show }) => { ui.mapShown = show })
-bus.on('help_toggle', () => { ui.helpShown = !ui.helpShown })
-bus.on('overlays_close', () => { ui.helpShown = false; ui.debugShown = false })
+bus.on('menu', ({ show, tab }) => { ui.menuShown = show; if (tab) ui.menuTab = tab })
+bus.on('touch', ({ touch }) => { ui.touch = touch })
 bus.on('debug_toggle', () => { ui.debugShown = !ui.debugShown })
 bus.on('anchor', (a) => { ui.anchors[a.id] = a })
 bus.on('toast', ({ msg, kind, ms }) => {

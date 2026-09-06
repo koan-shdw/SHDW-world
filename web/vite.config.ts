@@ -73,6 +73,7 @@ export default defineConfig({
   // served at koan-shdw.github.io/koan-hang/ in production (CI is set on Actions)
   base: process.env.CI ? '/koan-hang/' : '/',
   server: { port: 5374, strictPort: true },
+  define: { __APP_VERSION__: JSON.stringify(`${process.env.npm_package_version ?? '0.2.0'} ${(process.env.GITHUB_SHA ?? 'dev').slice(0, 7)}`) },
   plugins: [svelte(), dataDirs()],
   worker: { format: 'es' },
 })

@@ -1,5 +1,5 @@
 // The event bus (REMAKE.md §2). The only way world/ and ui/ talk. Typed, synchronous, no framework.
-import type { ArtItem, Layout, Guides, SculptLook, Placed } from './world/art/art'
+import type { ArtItem, Layout, Guides, SculptLook, Placed, Kind } from './world/art/art'
 
 export type Mode = 'walk' | 'hang' | 'level'
 export type Look = 'clean' | 'wire' | 'textured'
@@ -9,7 +9,9 @@ export type FxKey = 'lut' | 'sky' | 'plants' | 'glass' | 'surface' | 'outline' |
 export type FxState = Record<FxKey, boolean>
 
 export interface WalkSnapshot { level: string; levelName: string; x: number; z: number; onStair: boolean; locked: boolean }
-export interface HudSnapshot { hint: 'walk' | 'hang' | null; cross: boolean; doorTip: string | null; hangTip: string | null }
+export interface HudSnapshot { hint: 'play' | null; cross: boolean; doorTip: string | null; hangTip: string | null }
+export type TouchAction = 'move' | 'down' | 'swap' | 'swapback' | 'turn' | 'turnback' | 'done' | 'alignWall' | 'alignAll'
+export interface TouchSnapshot { placed: string; kind: Kind; title: string; size: string }
 export interface Focus { art: string; placed: string | null; look: SculptLook }
 export interface ArtSnapshot { library: ArtItem[]; held: string | null; layout: Layout; selected: string | null; placed: Record<string, number>; hands: boolean; focus: Focus | null }
 export type { Placed }
@@ -23,7 +25,8 @@ export interface Events {
   walk_state: WalkSnapshot
   hud: HudSnapshot
   art_state: ArtSnapshot
-  mode: { mode: Mode }
+  menu: { show: boolean; tab?: string }
+  touch: { touch: TouchSnapshot | null }
   look: { look: Look }
   fx: { state: FxState }
   quality: { quality: Quality }
@@ -31,11 +34,10 @@ export interface Events {
   loader: LoaderState
   file_ready: { name: string; json: string; skipped: string[] }
   map_show: { show: boolean }
-  help_toggle: Record<string, never>
-  overlays_close: Record<string, never>
   anchor: { id: string; x: number; y: number; visible: boolean; text?: string }   // R3: world points the UI follows (HANG widget, work labels)
   // ui → world
-  set_mode: { mode: Mode }
+  menu_close: Record<string, never>
+  touch_action: { action: TouchAction }
   set_look: { look: Look }
   set_fx: { key: FxKey; on: boolean }
   set_quality: { quality: Quality }

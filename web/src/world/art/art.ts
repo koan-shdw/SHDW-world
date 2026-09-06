@@ -46,7 +46,7 @@ const defaultGuides = (): Guides => ({ snap: 'top', top: 200, centre: 150, botto
 
 export class ArtSystem {
   library: ArtItem[] = []
-  layout: Layout = { format: 'koan-hang-layout/2', name: 'draft', guides: defaultGuides(), items: [] }
+  layout: Layout = { format: 'koan-hang-layout/2', name: 'shdw-world-layout', guides: defaultGuides(), items: [] }
   held: ArtItem | null = null
   selected: string | null = null                 // a hung work picked with Tab: glows, takes delete / arrows / e
   hands = true                                    // the held work shows in your hands until a wall takes it (H toggles)
@@ -474,6 +474,15 @@ export class ArtSystem {
     if (this.held?.kind === 'sculpture') { this.heldYaw += THREE.MathUtils.degToRad(deg); return true }
     const p = this.target(); if (!p || p.kind !== 'sculpture') return false
     this.commit(); p.yaw = (p.yaw ?? 0) + THREE.MathUtils.degToRad(deg); this.rebuild(); this.autosave(); this.onChange?.(); return true
+  }
+  /** touch menu `swap`: the next library work of the same kind takes this spot (same wall, u, snap; same floor point, yaw) */
+  swapInPlace(p: Placed, step: number): ArtItem | null {
+    const same = this.library.filter((a) => a.kind === p.kind); if (same.length < 2) return null
+    const i = same.findIndex((a) => a.id === p.art); const next = same[((i + step) % same.length + same.length) % same.length]
+    this.commit(); p.art = next.id
+    if (p.kind === 'painting' && p.snap) p.topY = this.topFor(p.snap, next.h)
+    if (p.kind === 'sculpture') { p.colour = next.colour ?? p.colour; p.texture = next.texture ?? p.texture; p.plinth = next.plinth === undefined ? p.plinth : next.plinth }
+    this.rebuild(); this.autosave(); this.onChange?.(); return next
   }
   /** the sculpture the HANG card's look fields act on: the held one (its defaults) or the targeted placed one */
   focus(): { art: ArtItem; placed: Placed | null } | null {
