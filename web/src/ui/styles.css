@@ -1,4 +1,4 @@
-/* SHDW.world — the PLAY skin (GAME.md §2). KOAN var contract underneath (themes.ts sets the tokens), the shape is the game's:
+/* SHDW.world — the WORLD skin (GAME.md §2). KOAN var contract underneath (themes.ts sets the tokens), the shape is the game's:
    rounded, chunky, 2 px ink outlines, one hard shadow that collapses on press, a rounded sans, lowercase. */
 
 @font-face { font-family: 'Nunito'; src: url('/fonts/nunito.woff2') format('woff2'); font-weight: 200 1000; font-display: swap; }
@@ -44,7 +44,7 @@ html, body { margin: 0; height: 100%; background: var(--bg); color: var(--txt); 
 @keyframes pop { from { transform: scale(.85); opacity: 0; } to { transform: scale(1); opacity: 1; } }
 @keyframes fadein { from { opacity: 0; } to { opacity: 1; } }
 @keyframes bob { from { transform: translateY(0); } to { transform: translateY(-6px); } }
-@keyframes ringin { from { transform: translate(var(--tx, 0), var(--ty, 0)) scale(.4); opacity: 0; } to { opacity: 1; } }
+@keyframes ringin { from { transform: translate(var(--tx, 0), var(--ty, 0)) scale(.4); opacity: 0; } to { transform: translate(var(--tx, 0), var(--ty, 0)) scale(1); opacity: 1; } }
 
 /* prompts: one pill, ink on cream, on the thing you can touch */
 .viewport .hangtip, .viewport .doortip, .viewport .worklabel { position: absolute; background: var(--panel); border: var(--ink); border-radius: var(--r-pill); padding: 5px 14px; font-size: 14px; color: var(--txt-hi); pointer-events: none; white-space: nowrap; box-shadow: var(--shadow-sm); animation: pop var(--d-snap) var(--e-out); }
@@ -116,17 +116,16 @@ input[type='color'] { width: 44px; height: 30px; padding: 0 2px; background: var
 .hands .keys { font-size: 11px; color: var(--muted); margin-top: 6px; }
 .hands .txt { min-width: 0; }
 
-/* ---------- the action ring ---------- */
+/* ---------- the action ring, zelda style ---------- */
+.viewport .ringdim { position: absolute; inset: 0; z-index: 23; background: rgba(15,15,15,.28); pointer-events: none; animation: fadein var(--d-pop) var(--e-out); }
 .viewport .ring { position: absolute; z-index: 24; width: 0; height: 0; pointer-events: none; }
-.viewport .ring .hub { position: absolute; left: 0; top: 0; transform: translate(-50%, -50%); width: 120px; text-align: center; background: var(--panel); border: var(--ink); border-radius: var(--r-card); padding: 6px 8px; box-shadow: var(--shadow-sm); animation: pop var(--d-pop) var(--e-back); }
-.viewport .ring .hub .title { display: block; font-size: 13px; font-weight: 800; color: var(--txt-hi); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-.viewport .ring .hub .size { display: block; font-size: 10px; color: var(--muted); }
-.viewport .ring .slice { position: absolute; left: 0; top: 0; margin: -34px 0 0 -34px; width: 68px; height: 68px; padding: 0; border-radius: 50%; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 0; pointer-events: auto; background: var(--panel); animation: ringin var(--d-pop) var(--e-back) both; }
-.viewport .ring .slice .ic { display: flex; color: var(--txt-hi); }
-.viewport .ring .slice .lbl { font-size: 9px; font-weight: 800; color: var(--txt-hi); line-height: 1; margin-top: 2px; }
-.viewport .ring .slice .key { position: absolute; right: 4px; top: 2px; font-size: 9px; color: var(--muted); }
-.viewport .ring .slice.hot, .viewport .ring .slice:hover { background: var(--warn); transform: scale(1.12) !important; box-shadow: 0 0 0 3px var(--line), var(--shadow-sm); }
-.viewport .lookpanel { position: absolute; width: 250px; z-index: 23; background: var(--panel); border: var(--ink); border-radius: var(--r-card); padding: 10px 12px; display: flex; flex-direction: column; gap: 8px; box-shadow: var(--shadow); animation: pop var(--d-pop) var(--e-back); }
+.viewport .ring .orbit { position: absolute; left: -96px; top: -96px; width: 192px; height: 192px; border-radius: 50%; border: 2px dashed rgba(248,248,248,.7); animation: pop var(--d-pop) var(--e-out); }
+.viewport .ring .name { position: absolute; left: 0; top: -150px; transform: translate(-50%, -50%); white-space: nowrap; font-size: 15px; font-weight: 800; color: var(--panel); background: var(--line); border: 2px solid var(--panel); border-radius: var(--r-pill); padding: 5px 16px; animation: pop var(--d-pop) var(--e-back); }
+.viewport .ring .name.hot { background: var(--warn); color: var(--on-accent); border-color: var(--line); }
+.viewport .ring .tile { position: absolute; left: 0; top: 0; margin: -27px 0 0 -27px; width: 54px; height: 54px; padding: 0; border-radius: 50%; display: flex; align-items: center; justify-content: center; pointer-events: auto; background: var(--panel); color: var(--txt-hi); transform: translate(var(--tx), var(--ty)); animation: ringin var(--d-pop) var(--e-back) both; transition: transform var(--d-snap) var(--e-back), background var(--d-snap); box-shadow: var(--shadow-sm); }
+.viewport .ring .tile .key { position: absolute; right: -4px; top: -4px; font-size: 9px; font-weight: 700; color: var(--txt-hi); background: var(--panel); border: 1.5px solid var(--line); border-radius: 6px; padding: 0 4px; line-height: 13px; }
+.viewport .ring .tile.hot, .viewport .ring .tile:hover { background: var(--warn); transform: translate(var(--tx), var(--ty)) scale(1.3); z-index: 1; }
+.viewport .lookpanel { position: absolute; width: 250px; z-index: 25; background: var(--panel); border: var(--ink); border-radius: var(--r-card); padding: 10px 12px; display: flex; flex-direction: column; gap: 8px; box-shadow: var(--shadow); animation: pop var(--d-pop) var(--e-back); }
 .viewport .lookpanel .head { display: flex; justify-content: space-between; align-items: center; }
 .viewport .lookpanel .head .title { font-size: 14px; font-weight: 800; }
 
@@ -179,3 +178,9 @@ input[type='color'] { width: 44px; height: 30px; padding: 0 2px; background: var
 ::-webkit-scrollbar { width: 10px; height: 10px; }
 ::-webkit-scrollbar-track { background: transparent; }
 ::-webkit-scrollbar-thumb { background: var(--dim); border: 3px solid transparent; border-radius: 6px; background-clip: padding-box; }
+
+/* the wall widget as a readout */
+.viewport .widget .wrow { display: flex; justify-content: space-between; align-items: center; gap: 12px; padding: 4px 8px; border-radius: 10px; transition: background var(--d-snap); }
+.viewport .widget .wrow .k { font-size: 12px; color: var(--muted); }
+.viewport .widget .wrow .v { font-size: 15px; font-weight: 800; color: var(--txt-hi); }
+.viewport .widget .wrow.lit { background: var(--warn); }

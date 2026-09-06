@@ -1,11 +1,10 @@
 <script lang="ts">
-  // The action ring (GAME.md, owner 09-06: "when you click on an art an action ring comes up, important for controller use").
-  // Opens on the work (or a bar slot). Slices around a hub. Mouse (locked: movement deltas; free: the cursor), keys 1-6,
-  // right stick on a pad. A slice lights when aimed; click / A / Enter does it. Right click / B / Esc closes.
+  // The action ring, Zelda style (owner's pick 09-06): round tiles on a ring, the aimed tile grows, its name on a pill above,
+  // the room dims behind. Aim = mouse deltas while locked, the cursor when free, the right stick on a pad. Keys 1-5. Click / A does it.
   import Icon from './Icon.svelte'
   import { bus, type TouchAction } from '../bus'
   import { ui } from './state.svelte'
-  interface Slice { id: TouchAction | 'look' | 'hold' | 'remove'; label: string; icon: 'hand' | 'hook' | 'down' | 'swap' | 'turn' | 'look' | 'align' | 'cross' | 'check'; key: string }
+  interface Slice { id: TouchAction | 'look'; label: string; icon: 'hand' | 'down' | 'swap' | 'turn' | 'look' | 'align' | 'cross'; key: string }
   const t = $derived(ui.touch)
   const at = $derived(ui.anchors['touch'])
   const slices = $derived<Slice[]>(t
@@ -17,30 +16,32 @@
         { id: 'done', label: 'done', icon: 'cross', key: 'esc' },
       ]
     : [])
-  const R = 92
+  const R = 96
   const aim = $derived(ui.ringAim)
   const hot = $derived.by(() => {
-    if (!slices.length || !aim || Math.hypot(aim.x, aim.y) < 18) return -1
-    const a = Math.atan2(aim.y, aim.x)                      // screen angle, y down
+    if (!slices.length || !aim || Math.hypot(aim.x, aim.y) < 16) return -1
+    const a = Math.atan2(aim.y, aim.x)
     const n = slices.length; const step = (Math.PI * 2) / n
     let best = -1, bd = Infinity
-    slices.forEach((_, i) => { const sa = -Math.PI / 2 + i * step; let d = Math.abs(((a - sa + Math.PI * 3) % (Math.PI * 2)) - Math.PI); if (d < bd) { bd = d; best = i } })
+    slices.forEach((_, i) => { const sa = -Math.PI / 2 + i * step; const d = Math.abs(((a - sa + Math.PI * 3) % (Math.PI * 2)) - Math.PI); if (d < bd) { bd = d; best = i } })
     return bd <= step / 2 + 0.01 ? best : -1
   })
   $effect(() => { ui.ringHot = hot >= 0 && slices[hot] ? slices[hot].id : null })
   const pos = (i: number) => { const a = -Math.PI / 2 + (i * Math.PI * 2) / Math.max(1, slices.length); return { x: Math.cos(a) * R, y: Math.sin(a) * R } }
   const act = (id: Slice['id']) => { if (id === 'look') { ui.lookOpen = true; return } bus.emit('touch_action', { action: id as TouchAction }) }
   $effect(() => bus.on('ring_confirm', () => { if (hot >= 0 && slices[hot]) act(slices[hot].id) }))
+  const name = $derived(hot >= 0 && slices[hot] ? slices[hot].label : t?.title ?? '')
 </script>
 
 {#if t && at?.visible}
+  <div class="ringdim"></div>
   <div class="ring" style="left:{at.x}px; top:{at.y}px" role="menu" aria-label="actions">
-    <div class="hub"><span class="title">{t.title}</span><span class="size">{t.size}</span></div>
+    <div class="orbit"></div>
+    <div class="name" class:hot={hot >= 0}>{name}</div>
     {#each slices as s, i (s.id)}
       {@const p = pos(i)}
-      <button class="slice" class:hot={i === hot} style="transform: translate({p.x}px, {p.y}px); animation-delay: {i * 30}ms" onclick={() => act(s.id)} onmouseenter={() => (ui.ringAim = { x: p.x, y: p.y })}>
-        <span class="ic"><Icon name={s.icon} /></span>
-        <span class="lbl">{s.label}</span>
+      <button class="tile" class:hot={i === hot} style="--tx:{p.x}px; --ty:{p.y}px; animation-delay: {i * 30}ms" onclick={() => act(s.id)} onmouseenter={() => (ui.ringAim = { x: p.x, y: p.y })} title={s.label}>
+        <Icon name={s.icon} size={24} />
         <span class="key">{s.key}</span>
       </button>
     {/each}

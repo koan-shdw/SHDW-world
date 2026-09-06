@@ -8,10 +8,10 @@ export type Quality = 'full' | 'balanced' | 'low'
 export type FxKey = 'lut' | 'sky' | 'plants' | 'glass' | 'surface' | 'outline' | 'dither' | 'smaa'
 export type FxState = Record<FxKey, boolean>
 export interface PlaySettings { sensitivity: number; fov: number; reduceMotion: boolean; headBob: boolean }
-export interface SoundSettings { master: number; ui: number; world: number; muted: boolean }
+
 
 export interface WalkSnapshot { level: string; levelName: string; x: number; z: number; onStair: boolean; locked: boolean }
-export interface HudSnapshot { hint: 'play' | null; cross: boolean; doorTip: string | null; hangTip: string | null; target: boolean }
+export interface HudSnapshot { hint: 'enter' | null; cross: boolean; doorTip: string | null; hangTip: string | null; target: boolean }
 export type TouchAction = 'move' | 'down' | 'swap' | 'swapback' | 'turn' | 'turnback' | 'done' | 'alignWall' | 'alignAll'
 export interface TouchSnapshot { placed: string; kind: Kind; title: string; size: string }
 export interface Focus { art: string; placed: string | null; look: SculptLook }
@@ -29,8 +29,7 @@ export interface Events {
   art_state: ArtSnapshot
   menu: { show: boolean; tab?: string }
   play: { settings: PlaySettings }
-  sound: { settings: SoundSettings }
-  sfx: { name: string; at?: [number, number, number]; pitch?: number }
+  widget_flash: { key: 'height' | 'snap' | 'gap' }   // the wall widget lights the value a key just changed
   ring_aim: { x: number; y: number }            // the ring's aim vector, from mouse deltas or the right stick
   ring_confirm: Record<string, never>            // click / A while the ring is open: do the hot slice
   touch: { touch: TouchSnapshot | null }
@@ -45,7 +44,6 @@ export interface Events {
   // ui → world
   menu_close: Record<string, never>
   set_play: { patch: Partial<PlaySettings> }
-  set_sound: { patch: Partial<SoundSettings> }
   touch_action: { action: TouchAction }
   set_look: { look: Look }
   set_fx: { key: FxKey; on: boolean }

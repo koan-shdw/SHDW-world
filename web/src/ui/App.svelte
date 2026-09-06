@@ -22,9 +22,6 @@
     onviewport(viewport)
     return off
   })
-  // every button: hover and press sounds (GAME.md §1), one delegated listener
-  const uiHover = (e: MouseEvent) => { const t = (e.target as HTMLElement).closest?.('button'); if (t && !t.disabled) bus.emit('sfx', { name: 'hover' }) }
-  const uiClick = (e: MouseEvent) => { const t = (e.target as HTMLElement).closest?.('button, input[type=checkbox]'); if (t) bus.emit('sfx', { name: 'click' }) }
   $effect(() => { if (ui.hud.cross) ui.entered = true })
   const mapClick = (e: MouseEvent) => { const r = big.getBoundingClientRect(); bus.emit('map_click', { px: e.clientX - r.left, py: e.clientY - r.top }) }
 </script>
@@ -40,8 +37,8 @@
   {/if}
   {#if ui.room && !ui.entered}
     <div class="title"><div class="mark big">SHDW<b>.world</b></div><div class="enter">press anywhere to enter</div><div class="keys">w a s d walk · mouse look · click hang · e touch · esc menu</div></div>
-  {:else if ui.hud.hint === 'play' && ui.room}
-    <div class="hint">click to play<small>w a s d walk · mouse look · click hang · e touch · esc menu</small></div>
+  {:else if ui.hud.hint === 'enter' && ui.room}
+    <div class="hint">click to enter<small>w a s d walk · mouse look · click hang · e touch · esc menu</small></div>
   {/if}
   <div class="crosshair" class:target={ui.hud.target} hidden={!ui.hud.cross}></div>
   <div class="doortip" hidden={!ui.hud.doorTip}>{ui.hud.doorTip}</div>
@@ -52,7 +49,6 @@
   <WallWidget />
 </div>
 
-<svelte:document onmouseover={uiHover} onclick={uiClick} />
 <div class="mark top">SHDW<b>.world</b></div>
 
 <div class="bottom" class:dim={!ui.hud.cross}>

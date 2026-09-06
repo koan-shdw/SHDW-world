@@ -22,6 +22,7 @@ export class Walker {
   onStep: ((footing: Footing, running: boolean) => void) | null = null   // a footfall (GAME.md §1 footsteps)
   onLevelStep: (() => void) | null = null                                 // the yard step, a stair top: a small dip
   headBob = true
+  frozen = false                                          // the ring is open: feet stay, eyes stay
   dip = { y: 0 }                                          // a one-shot camera dip, driven by Feel
   private prev = { x: 0, z: 0, y: 0 }
   private travelled = 0
@@ -59,7 +60,7 @@ export class Walker {
     const s = this.state
     const before = { x: s.x, z: s.z, onStair: s.onStair, level: s.level }
     this.moving = false
-    if (s.locked) {
+    if (s.locked && !this.frozen) {
       let fwd = 0, side = 0
       if (this.keys.has('KeyW') || this.keys.has('ArrowUp')) fwd += 1
       if (this.keys.has('KeyS') || this.keys.has('ArrowDown')) fwd -= 1

@@ -67,7 +67,6 @@ export class ArtSystem {
   private tiles = new Map<string, THREE.Texture>()
   onModel: ((a: ArtItem, g: THREE.Group) => void) | null = null   // a model landed: thumbnail time
   feel: Feel | null = null                                          // the response envelope (GAME.md §1)
-  sfx: ((name: string, at?: THREE.Vector3) => void) | null = null
   static CONE = THREE.MathUtils.degToRad(10)                        // forgiving aim: the nearest touchable inside this cone
   private lastHit: string | null = null                             // the wall / floor the ghost is on, for the snap moment
   private handTarget = new THREE.Vector3(); private handQuat = new THREE.Quaternion(); private handTmp = new THREE.Vector3()
@@ -289,7 +288,7 @@ export class ArtSystem {
       const hm = this.meshFor(a); const k = 0.35 / Math.max(a.w, a.h, a.kind === 'sculpture' ? a.h + (this.lookOf(a).plinth?.h ?? 0) : 0) * 100
       hm.scale.setScalar(k); hm.visible = false; this.scene.add(hm); this.handMesh = hm   // in the scene, lagging the camera (GAME.md: alive in the hand)
       this.handTarget.set(0.26, a.kind === 'sculpture' ? -0.32 : -0.2, -0.62)
-      this.placeHand(1); this.feel?.handsIn(hm, hm.position.y); this.sfx?.('pick')
+      this.placeHand(1); this.feel?.handsIn(hm, hm.position.y);
     }
     this.onChange?.()
   }
@@ -389,7 +388,7 @@ export class ArtSystem {
     const hit = active ? this.hitWall() : null
     if (this.handMesh) this.handMesh.visible = active && this.hands && !hit
     const hitKey = hit ? hit.wall.id : null
-    if (hitKey !== this.lastHit) { this.lastHit = hitKey; if (hit) { this.feel?.snap(this.ghost); this.sfx?.('snap', hit.point) } }
+    if (hitKey !== this.lastHit) { this.lastHit = hitKey; if (hit) { this.feel?.snap(this.ghost); } }
     if (!hit) { this.ghost.visible = false; this.preview = { hit: null, u0: 0, top: 0, ok: false, why: '' }; return }
     const pv = this.plan(this.held, hit, this.walker.state.level)
     this.preview = pv
@@ -402,25 +401,25 @@ export class ArtSystem {
     if (!this.held) return this.pickup() ? 'picked' : 'nothing'
     const pv = this.preview
     if (this.held.kind === 'sculpture') {
-      if (!pv.floor || !pv.ok) { if (this.ghost && pv.floor) { this.feel?.refuse(this.ghost, new THREE.Vector3(1, 0, 0)); this.sfx?.('nope', pv.floor.point) } return 'refused' }
+      if (!pv.floor || !pv.ok) { if (this.ghost && pv.floor) { this.feel?.refuse(this.ghost, new THREE.Vector3(1, 0, 0)); } return 'refused' }
       this.commit()
       const look = this.lookOf(this.held)
       const fp = pv.floor.point
       const sid = `s-${Date.now().toString(36)}-${(this.seq++).toString(36)}`
       this.layout.items.push({ id: sid, art: this.held.id, kind: 'sculpture', wall: '', level: this.walker.state.level, u: 0, topY: 0, snap: null, pos: [fp.x, fp.y, fp.z], yaw: this.ghostYaw(), colour: look.colour, texture: look.texture, plinth: look.plinth })
       this.rebuild(); this.autosave()
-      const gm = this.meshes.get(sid); if (gm) this.feel?.land(gm); this.sfx?.('stone', fp)
+      const gm = this.meshes.get(sid); if (gm) this.feel?.land(gm);
       this.hold(null)                                           // GAME.md §0 law 2: down means down
       return 'placed'
     }
-    if (!pv.hit || !pv.ok) { if (this.ghost && pv.hit) { const [dx, dz] = wallDir(pv.hit.wall); this.feel?.refuse(this.ghost, new THREE.Vector3(dx, 0, dz)); this.sfx?.('nope', pv.hit.point) } return 'refused' }
+    if (!pv.hit || !pv.ok) { if (this.ghost && pv.hit) { const [dx, dz] = wallDir(pv.hit.wall); this.feel?.refuse(this.ghost, new THREE.Vector3(dx, 0, dz)); } return 'refused' }
     this.commit()
     const floorY = floorOf(this.lv, this.walker.state.level).floorY
     const g = this.layout.guides
     const pid = `p-${Date.now().toString(36)}-${(this.seq++).toString(36)}`
     this.layout.items.push({ id: pid, art: this.held.id, kind: 'painting', wall: pv.hit.wall.id, level: this.walker.state.level, u: pv.u0, topY: pv.top - floorY, snap: g.snap === 'free' ? null : g.snap })
     this.rebuild(); this.autosave()
-    const gm = this.meshes.get(pid); if (gm) this.feel?.land(gm); this.sfx?.('land', pv.hit.point)
+    const gm = this.meshes.get(pid); if (gm) this.feel?.land(gm);
     this.hold(null)                                             // GAME.md §0 law 2: down means down
     return 'placed'
   }
@@ -464,7 +463,6 @@ export class ArtSystem {
       // the mesh flies toward your lower right and shrinks, then the layout rebuilds without it
       this.meshes.delete(p.id); g.userData = {}
       const toward = new THREE.Vector3(0.35, -0.3, -0.7).applyMatrix4(this.camera.matrixWorld)
-      this.sfx?.('whoosh', g.position)
       this.feel.takeDown(g, toward, () => { this.group.remove(g); this.rebuild(); this.onChange?.() })
       this.autosave(); this.onChange?.(); return true
     }
@@ -526,8 +524,7 @@ export class ArtSystem {
     if (this.held?.kind === 'sculpture') { this.heldYaw += THREE.MathUtils.degToRad(deg); return true }
     const p = this.target(); if (!p || p.kind !== 'sculpture') return false
     this.commit(); p.yaw = (p.yaw ?? 0) + THREE.MathUtils.degToRad(deg); this.rebuild(); this.autosave()
-    const g = this.meshes.get(p.id); if (g && this.feel) { g.rotation.y = p.yaw - THREE.MathUtils.degToRad(deg); this.feel.turn(g, p.yaw) }
-    this.sfx?.('turn', g?.position); this.onChange?.(); return true
+    const g = this.meshes.get(p.id); if (g && this.feel) { g.rotation.y = p.yaw - THREE.MathUtils.degToRad(deg); this.feel.turn(g, p.yaw) } this.onChange?.(); return true
   }
   /** touch menu `swap`: the next library work of the same kind takes this spot (same wall, u, snap; same floor point, yaw) */
   swapInPlace(p: Placed, step: number): ArtItem | null {

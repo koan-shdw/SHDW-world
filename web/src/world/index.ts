@@ -10,7 +10,6 @@ import { loadLevel, buildLevel, updateDoors, floorOf, setWireColor, meshAudit, s
 import { Walker } from './walk'
 import { Input, type Verb } from './input'
 import { Feel } from './feel'
-import { Sounds } from '../audio/sounds'
 import { Minimap } from './minimap'
 import { ArtSystem } from './art/art'
 import { Anchors } from './anchors'
@@ -93,17 +92,14 @@ export async function startWorld(container: HTMLElement, base: string): Promise<
   walker.doors = built.doors
   const input = new Input(renderer.gl.domElement)
   const feel = new Feel(); feel.reduce = input.settings.reduceMotion
-  const sounds = new Sounds()
-  const sfx = (name: string, at?: THREE.Vector3) => bus.emit('sfx', { name, at: at ? [at.x, at.y, at.z] : undefined })
   walker.keys = input.keys
   walker.headBob = input.settings.headBob
   camera.fov = input.settings.fov; camera.updateProjectionMatrix()
   input.onLook = (dx, dy) => walker.look(dx, dy)
   input.onLockChange = (on) => walker.setLocked(on)
-  walker.onStep = (footing, running) => bus.emit('sfx', { name: `step-${footing}`, pitch: running ? 1.1 : 1 })
-  walker.onLevelStep = () => { feel.dip(walker.dip, 0.03); sfx('step-concrete') }
+  walker.onLevelStep = () => feel.dip(walker.dip, 0.03)
   const art = new ArtSystem(level, scene, walker, camera, DATA, loader)
-  art.feel = feel; art.sfx = sfx
+  art.feel = feel
   art.occluder = occluder
   art.floorRay = (origin, dir, far) => { bvhRay.origin.copy(origin); bvhRay.direction.copy(dir); const h = roomBVH.raycastFirst(bvhRay, THREE.DoubleSide, 0, far); return h && h.face ? { point: h.point, ny: Math.abs(h.face.normal.y), dist: h.distance } : null }
   art.tileLoader = (name) => { const spec = MAPS[name]; if (!spec) return Promise.reject(new Error(`no tile ${name}`)); return tile(spec.file) }
@@ -139,7 +135,7 @@ export async function startWorld(container: HTMLElement, base: string): Promise<
   artSnapshot()
   walker.onChange = () => art.onLevelChange()
 
-  bus.emit('play', { settings: { ...input.settings } }); bus.emit('sound', { settings: { ...sounds.settings } })
+  bus.emit('play', { settings: { ...input.settings } })
   bus.emit('world_ready', { hangWalls: level.walls.filter((w) => w.hang !== false).length, stairs: level.stairs.length, doors: built.doors.length, floors: level.levels.length, eyeCm: Math.round(level.eyeHeight * 100), walls: level.walls.length })
 
   // ---- minimap: the UI hands over two canvases -------------------------------------------------------
@@ -155,8 +151,8 @@ export async function startWorld(container: HTMLElement, base: string): Promise<
     bus.on('accent', ({ css }) => setWireColor(built.wire, css)),
     bus.on('hold', ({ id }) => {
       const a = id ? art.library.find((x) => x.id === id) ?? null : null
-      if (a && art.isPlaced(a.id)) { bus.toast(`${a.title} is on the wall · walk up to it and press e`, 'warn'); sfx('nope'); return }
-      if (a && art.held?.id === a.id) { art.hold(null); sfx('putback'); bus.toast('put back'); return }
+      if (a && art.isPlaced(a.id)) { bus.toast(`${a.title} is on the wall · walk up to it and press e`, 'warn'); return }
+      if (a && art.held?.id === a.id) { art.hold(null); bus.toast('put back'); return }
       art.hold(a)
       if (art.held) bus.toast(`holding ${art.held.title} · look at a wall, click`)
     }),
@@ -195,29 +191,29 @@ export async function startWorld(container: HTMLElement, base: string): Promise<
   // ---- verbs (GAME.md §1): click = do, E = touch, right click / Q = put back, R = turn, 1-0 = pick, wheel = slide ----------
   const toggleDoor = (): boolean => {
     const d = walker.nearestDoor(); if (!d) return false
-    if (!d.opening.door?.toggle) { bus.toast('locked', 'warn'); sfx('nope'); return true }
-    d.open = !d.open; sfx(d.open ? 'door-open' : 'door-close', new THREE.Vector3(camera.position.x, camera.position.y, camera.position.z)); return true
+    if (!d.opening.door?.toggle) { bus.toast('locked', 'warn'); return true }
+    d.open = !d.open; return true
   }
-  const openMenu = (tab?: string) => { if (menuOpen) return; menuOpen = true; closeTouch(); input.release(); sfx('menu-open'); bus.emit('menu', { show: true, tab }) }
-  const closeMenu = () => { if (!menuOpen) return; menuOpen = false; sfx('menu-close'); bus.emit('menu', { show: false }); void input.lock() }
+  const openMenu = (tab?: string) => { if (menuOpen) return; menuOpen = true; closeTouch(); input.release(); bus.emit('menu', { show: true, tab }) }
+  const closeMenu = () => { if (!menuOpen) return; menuOpen = false; bus.emit('menu', { show: false }); void input.lock() }
   const touchSnap = (p: Placed) => { const a = art.library.find((x) => x.id === p.art); return { placed: p.id, kind: p.kind, title: a?.title ?? 'work', size: a ? `${a.w} × ${a.h} × ${a.d} cm` : '' } }
-  const openTouch = (p: Placed) => { touch = p; art.selected = p.id; artSnapshot(); sfx('open'); bus.emit('touch', { touch: touchSnap(p) }); const sz = renderer.size; input.openRing(sz.x / 2, sz.y / 2) }
-  const closeTouch = () => { if (!touch) return; touch = null; art.selected = null; anchors.set('touch', null); artSnapshot(); sfx('close'); input.closeRing(); bus.emit('touch', { touch: null }) }
+  const openTouch = (p: Placed) => { touch = p; walker.frozen = true; art.selected = p.id; artSnapshot(); bus.emit('touch', { touch: touchSnap(p) }); const sz = renderer.size; input.openRing(sz.x / 2, sz.y / 2) }
+  const closeTouch = () => { if (!touch) return; touch = null; walker.frozen = false; art.selected = null; anchors.set('touch', null); artSnapshot(); input.closeRing(); bus.emit('touch', { touch: null }) }
   const touchAction = (action: TouchAction) => {
     const p = touch; if (!p) return
     switch (action) {
       case 'move': closeTouch(); art.selected = p.id; if (art.pickup()) bus.toast(`${art.held?.title} in your hands · click puts it back · right click puts it down`); break
       case 'down': closeTouch(); art.selected = p.id; if (art.remove()) bus.toast(`${nameOf(p.art)} taken down · back in the bar · ctrl z brings it back`); break
-      case 'swap': case 'swapback': { const n = art.swapInPlace(p, action === 'swap' ? 1 : -1); if (n) { sfx('swap'); bus.toast(`swapped for ${n.title}`); bus.emit('touch', { touch: touchSnap(p) }) } else { sfx('nope'); bus.toast('nothing free of that kind in the bar', 'warn') } break }
+      case 'swap': case 'swapback': { const n = art.swapInPlace(p, action === 'swap' ? 1 : -1); if (n) { bus.toast(`swapped for ${n.title}`); bus.emit('touch', { touch: touchSnap(p) }) } else { bus.toast('nothing free of that kind in the bar', 'warn') } break }
       case 'turn': case 'turnback': art.selected = p.id; art.rotate(action === 'turn' ? 15 : -15); break
-      case 'alignWall': bus.toast(`${art.snapAll(p.wall)} aligned on this wall`); sfx('snap'); break
-      case 'alignAll': bus.toast(`${art.snapAll()} aligned`); sfx('snap'); break
+      case 'alignWall': bus.toast(`${art.snapAll(p.wall)} aligned on this wall`); break
+      case 'alignAll': bus.toast(`${art.snapAll()} aligned`); break
       case 'done': closeTouch(); break
     }
   }
   const putBack = () => {
     if (touch) { closeTouch(); return }
-    if (art.held) { art.hold(null); sfx('putback'); bus.toast('put back in the bar'); return }
+    if (art.held) { art.hold(null); bus.toast('put back in the bar'); return }
   }
   input.onVerb = (verb: Verb, e) => {
     if (menuOpen) { if (verb === 'menu') closeMenu(); return }
@@ -226,7 +222,7 @@ export async function startWorld(container: HTMLElement, base: string): Promise<
       case 'menu': openMenu(); break
       case 'keys': openMenu('keys'); break
       case 'debug': bus.emit('debug_toggle', {}); break
-      case 'undo': case 'redo': closeTouch(); bus.toast((verb === 'redo' ? art.doRedo() : art.doUndo()) ? verb : 'nothing to undo'); sfx('click'); break
+      case 'undo': case 'redo': closeTouch(); bus.toast((verb === 'redo' ? art.doRedo() : art.doUndo()) ? verb : 'nothing to undo'); break
       case 'do': {
         if (touch) { bus.emit('ring_confirm', {}); return }
         if (!art.held) { const t = art.target(); if (t) { openTouch(t); return } }
@@ -240,31 +236,43 @@ export async function startWorld(container: HTMLElement, base: string): Promise<
       case 'touch': {
         if (touch) { closeTouch(); return }
         if (!art.held) { const t = art.target(); if (t) { openTouch(t); return } }
-        if (!toggleDoor()) sfx('nope')
+        if (!toggleDoor()) bus.toast('nothing to touch here', 'warn')
         break
       }
       case 'putback': putBack(); break
       case 'turn': case 'turnback': if (touch) touchAction(verb); else if (!art.rotate(verb === 'turn' ? 15 : -15)) bus.toast('hold or look at a sculpture first', 'warn'); else artSnapshot(); break
-      case 'cycleNext': case 'cyclePrev': if (touch) touchAction(verb === 'cycleNext' ? 'swap' : 'swapback'); else { art.swap(verb === 'cycleNext' ? 1 : -1); sfx('hover') } break
+      case 'cycleNext': case 'cyclePrev': if (touch) touchAction(verb === 'cycleNext' ? 'swap' : 'swapback'); else { art.swap(verb === 'cycleNext' ? 1 : -1); } break
       case 'map': showMap(true); break
       case 'hands': art.hands = !art.hands; artSnapshot(); bus.toast(art.hands ? 'hands view on' : 'hands view off'); break
-      case 'select': { const p = art.selectNext(); artSnapshot(); sfx('hover'); bus.toast(p ? `selected ${nameOf(p.art)} · e touch · delete · arrows` : 'nothing selected'); break }
-      case 'remove': { if (touch) { touchAction('down'); return } const t = art.target(); if (t && art.remove()) bus.toast(`${nameOf(t.art)} taken down · back in the bar · ctrl z brings it back`); else { bus.toast('look at a hung work, or tab to select one', 'warn'); sfx('nope') } break }
+      case 'gap': if (art.held?.kind === 'painting') guideGap(); break
+      case 'select': { const p = art.selectNext(); artSnapshot(); bus.toast(p ? `selected ${nameOf(p.art)} · e touch · delete · arrows` : 'nothing selected'); break }
+      case 'remove': { if (touch) { touchAction('down'); return } const t = art.target(); if (t && art.remove()) bus.toast(`${nameOf(t.art)} taken down · back in the bar · ctrl z brings it back`); else { bus.toast('look at a hung work, or tab to select one', 'warn'); } break }
     }
     void e
   }
   input.onSlot = (n) => {
     if (menuOpen) return
     if (touch) { if (n <= 3) touchAction((['move', 'down', 'swap', 'turn'] as TouchAction[])[n]); return }
-    const a = art.library[n]; if (!a) { sfx('nope'); return }
+    const a = art.library[n]; if (!a) { return }
     bus.emit('hold', { id: a.id })
   }
   input.onArrow = (du, dy, e) => {
     if (menuOpen) return
     if (touch) art.selected = touch.id
-    if (art.nudge(du, dy)) { e.preventDefault(); sfx('nudge') }
+    else if (art.held?.kind === 'painting') { e.preventDefault(); if (dy) guideHeight(dy); else if (du) guideSnap(du > 0 ? 1 : -1); return }
+    if (art.nudge(du, dy)) e.preventDefault()
   }
-  input.onWheel = (step) => { if (menuOpen) return; if (touch) touchAction(step > 0 ? 'swap' : 'swapback'); else { art.swap(step); sfx('hover') } }
+  // the wall widget (owner 09-06: the mouse is taken, so it is keys and wheel): height, snap line, gap
+  const SNAPS = ['top', 'centre', 'bottom', 'free'] as const
+  const guideHeight = (cm: number): boolean => { const g = art.layout.guides; if (g.snap === 'free') { bus.toast('free: the crosshair sets the height', 'warn'); return false } const v = Math.max(0, Math.min(400, g[g.snap] + cm)); art.setGuides({ [g.snap]: v } as Partial<typeof g>); bus.emit('widget_flash', { key: 'height' }); return true }
+  const guideSnap = (step: number): void => { const g = art.layout.guides; const i = SNAPS.indexOf(g.snap); art.setGuides({ snap: SNAPS[((i + step) % 4 + 4) % 4] }); bus.emit('widget_flash', { key: 'snap' }) }
+  const guideGap = (): void => { const g = art.layout.guides; const steps = [0, 5, 10, 20]; const i = steps.indexOf(g.gap); art.setGuides({ gap: steps[(i + 1) % steps.length] }); bus.emit('widget_flash', { key: 'gap' }); bus.toast(`gap ${art.layout.guides.gap} cm`) }
+  input.onWheel = (step, big) => {
+    if (menuOpen) return
+    if (touch) { touchAction(step > 0 ? 'swap' : 'swapback'); return }
+    if (art.held?.kind === 'painting') { guideHeight((step > 0 ? -1 : 1) * (big ? 10 : 1)); return }
+    art.swap(step)
+  }
   document.addEventListener('pointerlockchange', () => { if (!input.locked && !menuOpen && !bigShown) { menuOpen = true; closeTouch(); bus.emit('menu', { show: true }) } })
   bus.on('menu_close', () => closeMenu())
   bus.on('touch_action', ({ action }) => touchAction(action))
@@ -288,7 +296,6 @@ export async function startWorld(container: HTMLElement, base: string): Promise<
     if (art.held && art.preview.ok && input.takeClick()) input.onVerb?.('do', new MouseEvent('mousedown'))
     const s = walker.state
     const locked = s.locked
-    sounds.setListener(camera.position, new THREE.Vector3(0, 0, -1).applyQuaternion(camera.quaternion))
     // the touch menu follows its work and closes when you walk away
     if (touch) {
       const p = art.layout.items.find((x) => x.id === touch!.id)
@@ -316,7 +323,7 @@ export async function startWorld(container: HTMLElement, base: string): Promise<
     const doorTip = near ? (near.opening.door?.toggle ? (near.open ? 'e · close door' : 'e · open door') : 'door · closed') : null
     const target = !!lookAt && !touch
     const hudKey = `${locked}|${menuOpen}|${hangTip}|${doorTip}|${target}`
-    if (hudKey !== lastHud) { lastHud = hudKey; bus.emit('hud', { hint: locked || menuOpen || bigShown ? null : 'play', cross: locked, doorTip, hangTip, target }) }
+    if (hudKey !== lastHud) { lastHud = hudKey; bus.emit('hud', { hint: locked || menuOpen || bigShown ? null : 'enter', cross: locked, doorTip, hangTip, target }) }
     const fNow = locked ? art.focus() : null; const fKey = fNow ? `${fNow.art.id}|${fNow.placed?.id ?? ''}` : ''
     if (fKey !== lastFocus) { lastFocus = fKey; artSnapshot() }
     const walkKey = `${s.level}|${s.x.toFixed(2)}|${s.z.toFixed(2)}|${s.onStair}|${locked}`
@@ -328,7 +335,7 @@ export async function startWorld(container: HTMLElement, base: string): Promise<
     else anchors.set('work', null)
     const sz = renderer.size; anchors.publish(camera, sz.x, sz.y)
   })
-  bus.toast(`level built · ${level.walls.length} walls · click to play`)
+  bus.toast(`level built · ${level.walls.length} walls · click to enter`)
 
   // ---- debug handle + shot(): renders and posts a JPEG to the dev server (docs/sheet) --------------------------------
   const shot = async (name: string): Promise<string> => {
@@ -355,7 +362,7 @@ export async function startWorld(container: HTMLElement, base: string): Promise<
   ;(window as unknown as { koanHang: unknown }).koanHang = {
     walker, level, scene, renderer: renderer.gl, composer: renderer.composer, camera, shot, plan, view, THREE, built, toggleDoor, art, loader, bus, roomBVH,
     setMode: () => undefined, meshAudit: () => meshAudit(level, built.group), skyLeakAudit: () => skyLeakAudit(level, built.group, built.doors),
-    input, feel, sounds, quality: (q: 'full' | 'balanced' | 'low') => renderer.setQuality(q), getQuality: () => renderer.quality, smaa: renderer.smaa, looks,
+    input, feel, quality: (q: 'full' | 'balanced' | 'low') => renderer.setQuality(q), getQuality: () => renderer.quality, smaa: renderer.smaa, looks,
   }
 
   const dispose = () => {

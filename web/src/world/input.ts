@@ -2,7 +2,7 @@
 // Look applies on the mouse event itself, never a frame late. One sensitivity number. No smoothing, no acceleration.
 import { bus } from '../bus'
 
-export type Verb = 'do' | 'touch' | 'putback' | 'turn' | 'turnback' | 'cycleNext' | 'cyclePrev' | 'map' | 'menu' | 'hands' | 'select' | 'undo' | 'redo' | 'remove' | 'debug' | 'keys'
+export type Verb = 'do' | 'touch' | 'putback' | 'turn' | 'turnback' | 'cycleNext' | 'cyclePrev' | 'map' | 'menu' | 'hands' | 'select' | 'undo' | 'redo' | 'remove' | 'debug' | 'keys' | 'gap'
 export interface PlaySettings { sensitivity: number; fov: number; reduceMotion: boolean; headBob: boolean }
 const PLAY_KEY = 'shdw-world-play'
 export const defaultPlay = (): PlaySettings => ({ sensitivity: 1.0, fov: 75, reduceMotion: false, headBob: true })
@@ -18,7 +18,7 @@ export class Input {
   onVerb: ((verb: Verb, e: KeyboardEvent | MouseEvent) => void) | null = null
   onSlot: ((n: number) => void) | null = null
   onArrow: ((du: number, dy: number, e: KeyboardEvent) => void) | null = null
-  onWheel: ((step: number) => void) | null = null
+  onWheel: ((step: number, big: boolean) => void) | null = null
   onLockChange: ((locked: boolean) => void) | null = null
   /** while a ring is open the mouse aims it instead of the camera */
   ringOpen = false
@@ -42,7 +42,7 @@ export class Input {
       if (e.button === 0) { this.clickAt = performance.now(); this.onVerb?.('do', e) }
       else if (e.button === 2) this.onVerb?.('putback', e)
     })
-    dom.addEventListener('wheel', (e) => { if (!this.locked) return; e.preventDefault(); this.onWheel?.(e.deltaY > 0 ? 1 : -1) }, { passive: false })
+    dom.addEventListener('wheel', (e) => { if (!this.locked) return; e.preventDefault(); this.onWheel?.(e.deltaY > 0 ? 1 : -1, e.shiftKey) }, { passive: false })
     window.addEventListener('keydown', (e) => this.key(e))
     window.addEventListener('keyup', (e) => this.keys.delete(e.code))
     window.addEventListener('blur', () => this.keys.clear())
@@ -62,10 +62,11 @@ export class Input {
       case 'KeyR': this.onVerb?.(e.shiftKey ? 'turnback' : 'turn', e); break
       case 'KeyM': this.onVerb?.('map', e); break
       case 'KeyH': this.onVerb?.('hands', e); break
+      case 'KeyG': this.onVerb?.('gap', e); break
       case 'Tab': e.preventDefault(); this.onVerb?.('select', e); break
       case 'Delete': case 'Backspace': this.onVerb?.('remove', e); break
-      case 'BracketLeft': case 'Comma': this.onVerb?.('cyclePrev', e); break
-      case 'BracketRight': case 'Period': this.onVerb?.('cycleNext', e); break
+      case 'BracketLeft': this.onVerb?.('cyclePrev', e); break
+      case 'BracketRight': this.onVerb?.('cycleNext', e); break
       case 'ArrowLeft': case 'ArrowRight': case 'ArrowUp': case 'ArrowDown': {
         const st = e.shiftKey ? 10 : 1
         this.onArrow?.(e.code === 'ArrowLeft' ? -st : e.code === 'ArrowRight' ? st : 0, e.code === 'ArrowUp' ? st : e.code === 'ArrowDown' ? -st : 0, e); break

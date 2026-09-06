@@ -10,8 +10,8 @@ export const THEME_VARS = [
 ] as const
 
 export const PRESET_THEMES: Record<string, ThemeMap> = {
-  // PLAY (GAME.md §2): Messenger's palette pushed to DokeV's sun. Light, chunky, ink outlines. The game's default.
-  PLAY: {
+  // WORLD (GAME.md §2): Messenger's palette pushed to DokeV's sun. Light, chunky, ink outlines. The game's default.
+  WORLD: {
     '--bg0': '#F8F8F8', '--bg': '#EEF4F7', '--bg2': '#E2ECF2',
     '--panel': '#FFFFFF', '--panel2': '#F1F6F9', '--field': '#FFFFFF',
     '--header': '#F8F8F8',
@@ -57,8 +57,8 @@ export const PRESET_THEMES: Record<string, ThemeMap> = {
   },
 }
 
-export const DEFAULT_THEME = 'PLAY'
-const KEY = 'shdw-world-theme'   // a new key: everyone starts on PLAY
+export const DEFAULT_THEME = 'WORLD'
+const KEY = 'shdw-world-theme'   // a new key: everyone starts on WORLD
 
 export function currentTheme(): string {
   try { return localStorage.getItem(KEY) ?? DEFAULT_THEME } catch { return DEFAULT_THEME }
