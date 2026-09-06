@@ -65,15 +65,19 @@ function dataDirs(): Plugin {
     },
     closeBundle() {
       for (const d of DATA_DIRS) copyDir(join(ROOT, d), join(resolve(__dirname, outDir), 'data', d))
+      // the version stamp: a stale page compares itself against this at boot and reloads (owner 09-07: 'browser version isn't showing the update')
+      writeFileSync(join(resolve(__dirname, outDir), 'version.json'), JSON.stringify({ version: APP_VERSION }))
     },
   }
 }
+
+const APP_VERSION = `${process.env.npm_package_version ?? '0.2.0'} ${(process.env.GITHUB_SHA ?? 'dev').slice(0, 7)}`
 
 export default defineConfig({
   // served at koan-shdw.github.io/koan-hang/ in production (CI is set on Actions)
   base: process.env.CI ? '/koan-hang/' : '/',
   server: { port: 5374, strictPort: true },
-  define: { __APP_VERSION__: JSON.stringify(`${process.env.npm_package_version ?? '0.2.0'} ${(process.env.GITHUB_SHA ?? 'dev').slice(0, 7)}`) },
+  define: { __APP_VERSION__: JSON.stringify(APP_VERSION) },
   plugins: [svelte(), dataDirs()],
   worker: { format: 'es' },
 })
