@@ -197,8 +197,9 @@ export async function startWorld(container: HTMLElement, base: string): Promise<
   }
   const openMenu = (tab?: string) => { if (menuOpen) return; menuOpen = true; closeTouch(); input.release(); bus.emit('menu', { show: true, tab }) }
   const closeMenu = () => { if (!menuOpen) return; menuOpen = false; bus.emit('menu', { show: false }); void input.lock() }
-  const touchSnap = (p: Placed) => { const a = art.library.find((x) => x.id === p.art); return { placed: p.id, kind: p.kind, title: a?.title ?? 'work', size: a ? `${a.w} × ${a.h} × ${a.d} cm` : '' } }
-  const openTouch = (p: Placed) => { touch = p; walker.frozen = true; art.selected = p.id; artSnapshot(); bus.emit('touch', { touch: touchSnap(p) }); const sz = renderer.size; input.openRing(sz.x / 2, sz.y / 2) }
+  let ringKind: 'actions' | 'look' = 'actions'
+  const touchSnap = (p: Placed) => { const a = art.library.find((x) => x.id === p.art); return { placed: p.id, kind: p.kind, title: a?.title ?? 'work', size: a ? `${a.w} × ${a.h} × ${a.d} cm` : '', ring: ringKind } }
+  const openTouch = (p: Placed, ring: 'actions' | 'look' = 'actions') => { ringKind = ring; touch = p; walker.frozen = true; art.selected = p.id; artSnapshot(); bus.emit('touch', { touch: touchSnap(p) }); const sz = renderer.size; input.openRing(sz.x / 2, sz.y / 2) }
   const closeTouch = () => { if (!touch) return; touch = null; walker.frozen = false; art.selected = null; anchors.set('touch', null); artSnapshot(); input.closeRing(); bus.emit('touch', { touch: null }) }
   const touchAction = (action: TouchAction) => {
     const p = touch; if (!p) return
@@ -214,6 +215,8 @@ export async function startWorld(container: HTMLElement, base: string): Promise<
   }
   const putBack = () => {
     if (touch) { closeTouch(); return }
+    // owner 09-06: right click on a sculpture = its look ring (colours and materials, the sculpture only, never the plinth)
+    if (!art.held) { const t = art.target(); if (t && t.kind === 'sculpture') { openTouch(t, 'look'); return } }
     if (art.held) { art.hold(null); bus.toast('put back in the bar'); return }
   }
   input.onVerb = (verb: Verb, e) => {
@@ -253,7 +256,7 @@ export async function startWorld(container: HTMLElement, base: string): Promise<
   }
   input.onSlot = (n) => {
     if (menuOpen) return
-    if (touch) { if (n <= 3) touchAction((['move', 'down', 'swap', 'turn'] as TouchAction[])[n]); return }
+    if (touch) { bus.emit('ring_key', { n }); return }
     const a = art.library[n]; if (!a) { return }
     bus.emit('hold', { id: a.id })
   }

@@ -316,7 +316,7 @@ export class ArtSystem {
     for (const [id, g] of this.meshes) {
       // the glow sits on the edges and back, never on the image: selected = bright, looked at = faint
       const e = id === this.selected ? 0.3 : look && id === look.id ? 0.07 : 0
-      g.traverse((o) => { const m = o as THREE.Mesh; if (m.isMesh) for (const mm of (Array.isArray(m.material) ? m.material : [m.material]) as THREE.MeshStandardMaterial[]) { if (mm.map) continue; mm.emissive.setRGB(0, e, e * 0.62) } })
+      g.traverse((o) => { const m = o as THREE.Mesh; if (m.isMesh) for (const mm of (Array.isArray(m.material) ? m.material : [m.material]) as THREE.MeshStandardMaterial[]) { if (mm.map) continue; mm.emissive.setRGB(e * 0.4, e * 0.74, e * 0.9) } })
     }
   }
   swap(step: number): void {

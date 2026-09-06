@@ -13,7 +13,7 @@ export interface PlaySettings { sensitivity: number; fov: number; reduceMotion: 
 export interface WalkSnapshot { level: string; levelName: string; x: number; z: number; onStair: boolean; locked: boolean }
 export interface HudSnapshot { hint: 'enter' | null; cross: boolean; doorTip: string | null; hangTip: string | null; target: boolean }
 export type TouchAction = 'move' | 'down' | 'swap' | 'swapback' | 'turn' | 'turnback' | 'done' | 'alignWall' | 'alignAll'
-export interface TouchSnapshot { placed: string; kind: Kind; title: string; size: string }
+export interface TouchSnapshot { placed: string; kind: Kind; title: string; size: string; ring: 'actions' | 'look' }
 export interface Focus { art: string; placed: string | null; look: SculptLook }
 export interface ArtSnapshot { library: ArtItem[]; held: string | null; layout: Layout; selected: string | null; placed: Record<string, number>; hands: boolean; focus: Focus | null }
 export type { Placed }
@@ -32,6 +32,7 @@ export interface Events {
   widget_flash: { key: 'height' | 'snap' | 'gap' }   // the wall widget lights the value a key just changed
   ring_aim: { x: number; y: number }            // the ring's aim vector, from mouse deltas or the right stick
   ring_confirm: Record<string, never>            // click / A while the ring is open: do the hot slice
+  ring_key: { n: number }                          // 1-9 while a ring is open: that slice
   touch: { touch: TouchSnapshot | null }
   look: { look: Look }
   fx: { state: FxState }
