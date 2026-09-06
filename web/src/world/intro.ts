@@ -16,7 +16,6 @@ export const YOZO_QUOTE = [
 
 export class Intro {
   readonly group = new THREE.Group()
-  readonly sky = new THREE.Group()                   // rides with the walker's position: the far background never parallaxes
   readonly spot: THREE.SpotLight
   private quote: Text3D
   private baseIntensity = 18
@@ -47,13 +46,13 @@ export class Intro {
     this.spot.castShadow = true; this.spot.shadow.mapSize.set(1024, 1024); this.spot.shadow.bias = -0.0005; this.spot.shadow.camera.near = 0.3; this.spot.shadow.camera.far = 8
     this.group.add(this.spot, this.spot.target)
 
-    // the word of god: Yozo's quote, 200 m wide at 150 m, opposite the door, faint until the lightning finds it
+    // the word of god: Yozo's quote, fixed in the world 1.4 km out opposite the door, 1.9 km wide: a mountain, it never shifts
     const eye = floorY + 1.6
     this.quote = new Text3D(YOZO_QUOTE, { width: 200, size: 7.5, shadow: 'rgba(0,0,0,.5)', lineHeight: 1.22, weight: 800, sheen: true })
-    this.quote.mesh.position.set(150, eye + 62, 1.0); this.quote.mesh.rotation.y = -Math.PI / 2
+    const K = 9.5
+    this.quote.mesh.position.set(150 * K, eye + 62 * K, 1.0); this.quote.mesh.rotation.y = -Math.PI / 2; this.quote.mesh.scale.setScalar(K)
     this.quote.opacity = 0.62
-    this.sky.add(this.quote.mesh)
-    this.group.add(this.sky)
+    this.group.add(this.quote.mesh)
   }
 
   /** every frame: the flicker; the background stays put against your walk; the lightning reaches the words */
@@ -61,7 +60,7 @@ export class Intro {
     const n = Math.sin(t * 7.3) * 0.5 + Math.sin(t * 13.7 + 1.3) * 0.3 + Math.sin(t * 29.1 + 2.1) * 0.2
     const drop = Math.sin(t * 0.37) > 0.985 ? 0.55 : 1
     this.spot.intensity = this.baseIntensity * (0.94 + 0.06 * n) * drop
-    this.sky.position.set(walkerPos.x - 6.18, 0, walkerPos.z - 4.3)     // it was placed for the spawn; it moves with you, so it never moves
+    void walkerPos
     this.quote.update(t, flash)
   }
 }

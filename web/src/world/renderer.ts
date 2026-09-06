@@ -14,7 +14,7 @@ const DPR: Record<Quality, number> = { full: 2, balanced: 1.5, low: 1 }
 export class Renderer {
   readonly gl: THREE.WebGLRenderer
   readonly scene = new THREE.Scene()
-  readonly camera = new THREE.PerspectiveCamera(70, 1, 0.05, 200)
+  readonly camera = new THREE.PerspectiveCamera(70, 1, 0.05, 4000)   // the far background is kilometres out (owner 09-07)
   readonly composer: EffectComposer
   readonly smaa: SMAAPass
   quality: Quality = 'full'                       // highest quality is the default; the lower tiers are visible dials

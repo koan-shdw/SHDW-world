@@ -44,29 +44,29 @@ function smoke(scale: number, drift: number, alpha: number, solid: number): THRE
 export class Void {
   readonly group = new THREE.Group()
   readonly materials: THREE.ShaderMaterial[] = []
-  constructor(room: THREE.Group, floorY = -5.56, radius = 90) {
+  constructor(room: THREE.Group, floorY = -5.56, radius = 3000) {
     // the dome, solid, the far end
-    const sky = smoke(0.045, 0, 1, 1); this.materials.push(sky)
+    const sky = smoke(0.0016, 0, 1, 1); this.materials.push(sky)
     const dome = new THREE.Mesh(new THREE.SphereGeometry(radius, 48, 24), sky); dome.renderOrder = -10; dome.frustumCulled = false; this.group.add(dome)
     // the deep floor, solid, far below
     const deep = smoke(0.03, 3, 1, 1); this.materials.push(deep)
-    const bed = new THREE.Mesh(new THREE.CircleGeometry(radius, 48), deep); bed.rotation.x = -Math.PI / 2; bed.position.y = floorY - 30; bed.renderOrder = -9; this.group.add(bed)
+    const bed = new THREE.Mesh(new THREE.CircleGeometry(400, 48), deep); bed.rotation.x = -Math.PI / 2; bed.position.y = floorY - 30; bed.renderOrder = -9; this.group.add(bed)
     // sheets below: the depth. Nearest sheet thinnest and finest, deeper sheets coarser and denser
     const below = [[-1.2, 0.16, 0.35], [-3.5, 0.11, 0.45], [-7, 0.08, 0.55], [-13, 0.055, 0.7], [-22, 0.04, 0.85]]
     below.forEach(([dy, sc, al], i) => {
       const m = smoke(sc, i * 2.3, al, 0); this.materials.push(m)
-      const s = new THREE.Mesh(new THREE.CircleGeometry(radius, 40), m); s.rotation.x = -Math.PI / 2; s.position.y = floorY + dy; s.renderOrder = -8 + i; this.group.add(s)
+      const s = new THREE.Mesh(new THREE.CircleGeometry(160, 40), m); s.rotation.x = -Math.PI / 2; s.position.y = floorY + dy; s.renderOrder = -8 + i; this.group.add(s)
     })
     // sheets above: the same, over the roof
     const above = [[16, 0.07, 0.5], [26, 0.05, 0.7], [40, 0.035, 0.85]]
     above.forEach(([dy, sc, al], i) => {
       const m = smoke(sc, 7 + i * 1.7, al, 0); this.materials.push(m)
-      const s = new THREE.Mesh(new THREE.CircleGeometry(radius, 40), m); s.rotation.x = -Math.PI / 2; s.position.y = floorY + dy; s.renderOrder = -8 + i; this.group.add(s)
+      const s = new THREE.Mesh(new THREE.CircleGeometry(400, 40), m); s.rotation.x = -Math.PI / 2; s.position.y = floorY + dy; s.renderOrder = -8 + i; this.group.add(s)
     })
     // mist between you and the far words (owner 09-07): two tall sheets across the way, in the world so they drift past the words
     ;[[38, 0.05, 0.4], [82, 0.035, 0.55]].forEach(([x, sc, al], i) => {
       const m = smoke(sc, 11 + i * 3.1, al, 0); this.materials.push(m)
-      const s = new THREE.Mesh(new THREE.PlaneGeometry(320, 160), m); s.position.set(x, floorY + 50, 0); s.rotation.y = -Math.PI / 2; s.renderOrder = -6 + i; this.group.add(s)
+      const s = new THREE.Mesh(new THREE.PlaneGeometry(900, 500), m); s.position.set(x, floorY + 120, 0); s.rotation.y = -Math.PI / 2; s.renderOrder = -6 + i; this.group.add(s)
     })
     // the old flat void disc goes: the smoke is the void now
     room.traverse((o) => { const m = o as THREE.Mesh; if (m.isMesh && m.userData.kind === 'ground') m.visible = false })
