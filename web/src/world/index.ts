@@ -203,7 +203,7 @@ export async function startWorld(container: HTMLElement, base: string): Promise<
   const touchAction = (action: TouchAction) => {
     const p = touch; if (!p) return
     switch (action) {
-      case 'move': closeTouch(); art.selected = p.id; if (art.pickup()) bus.toast(`${art.held?.title} in your hands · click puts it back · right click puts it down`); break
+      case 'move': closeTouch(); input.clearClick(); art.selected = p.id; if (art.pickup()) bus.toast(`${art.held?.title} in your hands · click puts it back · right click puts it down`); break
       case 'down': closeTouch(); art.selected = p.id; if (art.remove()) bus.toast(`${nameOf(p.art)} taken down · back in the bar · ctrl z brings it back`); break
       case 'swap': case 'swapback': { const n = art.swapInPlace(p, action === 'swap' ? 1 : -1); if (n) { bus.toast(`swapped for ${n.title}`); bus.emit('touch', { touch: touchSnap(p) }) } else { bus.toast('nothing free of that kind in the bar', 'warn') } break }
       case 'turn': case 'turnback': art.selected = p.id; art.rotate(action === 'turn' ? 15 : -15); break
@@ -225,7 +225,7 @@ export async function startWorld(container: HTMLElement, base: string): Promise<
       case 'debug': bus.emit('debug_toggle', {}); break
       case 'undo': case 'redo': closeTouch(); bus.toast((verb === 'redo' ? art.doRedo() : art.doUndo()) ? verb : 'nothing to undo'); break
       case 'do': {
-        if (touch) { bus.emit('ring_confirm', {}); return }
+        if (touch) { input.clearClick(); bus.emit('ring_confirm', {}); input.clearClick(); return }
         if (!art.held) { const t = art.target(); if (t) { openTouch(t); return } }
         const r = art.place()
         if (r === 'placed') bus.toast('down · walk up to it and press e to touch it')
@@ -294,7 +294,7 @@ export async function startWorld(container: HTMLElement, base: string): Promise<
     updateDoors(built.doors, dt)
     art.update(dt, elapsed * 6)
     // the click buffer: a click that came just before the ghost turned green still lands
-    if (art.held && art.preview.ok && input.takeClick()) input.onVerb?.('do', new MouseEvent('mousedown'))
+    if (art.held && !touch && art.preview.ok && input.takeClick()) input.onVerb?.('do', new MouseEvent('mousedown'))
     const s = walker.state
     const locked = s.locked
     // the touch menu follows its work and closes when you walk away
