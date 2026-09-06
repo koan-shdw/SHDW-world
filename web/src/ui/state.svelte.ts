@@ -25,6 +25,8 @@ export const ui = $state({
   widgetFlash: null as string | null,
   ringHot: null as string | null,
   lookOpen: false,
+  slotRing: null as { id: string; x: number; y: number; title: string; local: boolean; placed: boolean } | null,
+  repo: { url: '', error: '' },
   entered: false,
 })
 
@@ -42,6 +44,7 @@ bus.on('map_show', ({ show }) => { ui.mapShown = show })
 bus.on('menu', ({ show, tab }) => { ui.menuShown = show; if (tab) ui.menuTab = tab })
 bus.on('touch', ({ touch }) => { ui.touch = touch; ui.ringAim = null; ui.ringHot = null; if (!touch) ui.lookOpen = false })
 bus.on('ring_aim', (a) => { ui.ringAim = a })
+bus.on('repo_saved', (r) => { ui.repo = { url: r.url ?? '', error: r.error ?? '' } })
 let flashT = 0
 bus.on('widget_flash', ({ key }) => { ui.widgetFlash = key; clearTimeout(flashT); flashT = window.setTimeout(() => (ui.widgetFlash = null), 400) })
 bus.on('play', ({ settings }) => { ui.play = settings })

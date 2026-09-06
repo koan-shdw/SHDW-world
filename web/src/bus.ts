@@ -14,7 +14,7 @@ export interface WalkSnapshot { level: string; levelName: string; x: number; z: 
 export interface HudSnapshot { hint: 'enter' | null; cross: boolean; doorTip: string | null; hangTip: string | null; target: boolean }
 export type TouchAction = 'move' | 'down' | 'swap' | 'swapback' | 'turn' | 'turnback' | 'done' | 'alignWall' | 'alignAll'
 export interface TouchSnapshot { placed: string; kind: Kind; title: string; size: string; ring: 'actions' | 'look' }
-export interface Focus { art: string; placed: string | null; look: SculptLook }
+export interface Focus { art: string; placed: string | null; look: SculptLook; parts: string[] }
 export interface ArtSnapshot { library: ArtItem[]; held: string | null; layout: Layout; selected: string | null; placed: Record<string, number>; hands: boolean; focus: Focus | null }
 export type { Placed }
 export interface RoomInfo { hangWalls: number; stairs: number; doors: number; floors: number; eyeCm: number; walls: number }
@@ -56,6 +56,9 @@ export interface Events {
   remove_local: { id: string }
   set_guides: { patch: Partial<Guides> }
   set_sculpt: { patch: Partial<SculptLook> }
+  ui_ring: { open: boolean; x: number; y: number }          // a ring opened by the UI with the mouse free (the bar)
+  repo_save: { name: string; token: string }
+  repo_saved: { ok: boolean; url?: string; error?: string }
   rotate: { deg: number }
   probe_model: { data: string; key: number }
   model_probed: { key: number; w: number; h: number; d: number; error?: string }

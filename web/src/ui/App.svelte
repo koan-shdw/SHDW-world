@@ -23,6 +23,7 @@
     return off
   })
   $effect(() => { if (ui.hud.cross) ui.entered = true })
+  const outside = (e: MouseEvent) => { if (ui.slotRing && !(e.target as HTMLElement).closest?.('.ring, .hotbar')) { ui.slotRing = null; bus.emit('ui_ring', { open: false, x: 0, y: 0 }) } }
   const mapClick = (e: MouseEvent) => { const r = big.getBoundingClientRect(); bus.emit('map_click', { px: e.clientX - r.left, py: e.clientY - r.top }) }
 </script>
 
@@ -55,6 +56,7 @@
 </div>
 <Hands {base} />
 
+<svelte:document onmousedown={outside} />
 <canvas class="minimap" bind:this={small}></canvas>
 <canvas class="bigmap" bind:this={big} hidden={!ui.mapShown} onclick={mapClick}></canvas>
 

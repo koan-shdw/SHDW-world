@@ -8,11 +8,11 @@ import type { Feel } from '../feel'
 export type SnapLine = 'top' | 'centre' | 'bottom' | 'free'
 export type Kind = 'painting' | 'sculpture'
 export interface Plinth { w: number; d: number; h: number; colour: string }
-export interface TexPick { name: string; cm: number }
+export interface TexPick { name: string; cm: number; url?: string }      // name 'custom' carries his own image as a data URL
 /** the look of a sculpture: tint, tile, plinth (null = no plinth). Defaults live on the ArtItem, each placed copy keeps its own */
-export interface SculptLook { colour: string; texture: TexPick | null; plinth: Plinth | null }
-export interface ArtItem { id: string; kind: Kind; title: string; file?: string; data?: string; model?: string; thumb?: string; w: number; h: number; d: number; edge: string; colour?: string; texture?: TexPick | null; plinth?: Plinth | null }
-export interface Placed { id: string; art: string; kind: Kind; wall: string; level: string; u: number; topY: number; snap: SnapLine | null; pos?: [number, number, number]; yaw?: number; colour?: string; texture?: TexPick | null; plinth?: Plinth | null }
+export interface SculptLook { colour: string; texture: TexPick | null; plinth: Plinth | null; parts?: Record<string, string> }   // parts: one colour per named part of the model
+export interface ArtItem { id: string; kind: Kind; title: string; file?: string; data?: string; model?: string; thumb?: string; w: number; h: number; d: number; edge: string; colour?: string; texture?: TexPick | null; plinth?: Plinth | null; parts?: Record<string, string> }
+export interface Placed { id: string; art: string; kind: Kind; wall: string; level: string; u: number; topY: number; snap: SnapLine | null; pos?: [number, number, number]; yaw?: number; colour?: string; texture?: TexPick | null; plinth?: Plinth | null; parts?: Record<string, string> }
 export const TEXTURE_CHIPS: { name: string; tile: string | null }[] = [
   { name: 'none', tile: null }, { name: 'concrete', tile: 'concrete' }, { name: 'plaster', tile: 'wall-white' }, { name: 'plywood', tile: 'plywood' },
   { name: 'steel', tile: 'steel-black' }, { name: 'corten', tile: 'corten' }, { name: 'slate', tile: 'slate' }, { name: 'checker', tile: 'checker' },
@@ -140,7 +140,15 @@ export class ArtSystem {
     }
     return null
   }
-  private tile(name: string, cm: number): THREE.Texture | null {
+  private customTiles = new Map<string, THREE.Texture>()
+  private tile(name: string, cm: number, url?: string): THREE.Texture | null {
+    if (name === 'custom' && url) {
+      // his own image: decoded once, tiled by cm
+      let t = this.customTiles.get(url)
+      if (!t) { t = new THREE.Texture(); t.colorSpace = THREE.SRGBColorSpace; this.customTiles.set(url, t); this.loader.image(url, 'art', { repeat: true, anisotropy: 8 }).then((tex) => { this.customTiles.set(url, tex); this.rebuild() }).catch(() => undefined) }
+      const c = t.clone(); c.wrapS = c.wrapT = THREE.RepeatWrapping; c.repeat.setScalar(100 / Math.max(5, cm)); c.needsUpdate = true
+      return c
+    }
     const chip = TEXTURE_CHIPS.find((c) => c.name === name); if (!chip?.tile || !this.tileLoader) return null
     let t = this.tiles.get(chip.tile)
     if (!t) {
@@ -162,13 +170,18 @@ export class ArtSystem {
     }
     const src = this.model(a)
     const mat = new THREE.MeshStandardMaterial({ color: new THREE.Color(look.colour), roughness: 0.85, metalness: look.texture?.name === 'steel' || look.texture?.name === 'checker' ? 0.5 : 0 })
-    if (look.texture) { const t = this.tile(look.texture.name, look.texture.cm); if (t) mat.map = t }
+    if (look.texture) { const t = this.tile(look.texture.name, look.texture.cm, look.texture.url); if (t) mat.map = t }
+    // per-part tint: a named part with its own colour gets its own material (same tile, its colour)
+    const partMat = (name: string): THREE.Material => {
+      const c = look.parts?.[name]; if (!c) return mat
+      const pm = mat.clone(); pm.color = new THREE.Color(c); return pm
+    }
     if (src) {
       const m = src.clone(true)
       const box = new THREE.Box3().setFromObject(m); const size = new THREE.Vector3(); box.getSize(size)
       const k = size.y > 0 ? (a.h / 100) / size.y : 1     // typed height rules, aspect kept
       m.scale.setScalar(k); m.position.set(-(box.min.x + box.max.x) / 2 * k, ph - box.min.y * k, -(box.min.z + box.max.z) / 2 * k)
-      m.traverse((o) => { const mm = o as THREE.Mesh; if (mm.isMesh) { mm.material = mat; mm.castShadow = true } })
+      m.traverse((o) => { const mm = o as THREE.Mesh; if (mm.isMesh) { mm.material = partMat(mm.name || mm.parent?.name || ''); mm.castShadow = true } })
       g.add(m)
     } else {
       const ph2 = new THREE.Mesh(new THREE.BoxGeometry(a.w / 100, a.h / 100, a.d / 100), mat); ph2.position.y = ph + a.h / 200; g.add(ph2)
@@ -177,7 +190,14 @@ export class ArtSystem {
     return g
   }
   lookOf(a: ArtItem, p?: Placed | null): SculptLook {
-    return { colour: p?.colour ?? a.colour ?? '#f2f2ee', texture: p?.texture !== undefined ? p.texture : (a.texture ?? null), plinth: p?.plinth !== undefined ? p.plinth : (a.plinth === undefined ? defaultPlinth() : a.plinth) }
+    return { colour: p?.colour ?? a.colour ?? '#f2f2ee', texture: p?.texture !== undefined ? p.texture : (a.texture ?? null), plinth: p?.plinth !== undefined ? p.plinth : (a.plinth === undefined ? defaultPlinth() : a.plinth), parts: p?.parts ?? a.parts ?? {} }
+  }
+  /** the named parts of a sculpture's model (the OBJ's groups), once it has loaded */
+  partNames(a: ArtItem): string[] {
+    const m = this.models.get(a.id); if (!m) return []
+    const names: string[] = []
+    m.traverse((o) => { const mm = o as THREE.Mesh; if (mm.isMesh) { const n = mm.name || mm.parent?.name || ''; if (n && !names.includes(n)) names.push(n) } })
+    return names
   }
   /** a painting: a box w × h × d, the image on the front, the edge per `edge` */
   private meshFor(a: ArtItem, ghost = false, p?: Placed | null): THREE.Group {

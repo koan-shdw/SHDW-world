@@ -133,7 +133,7 @@ export async function startWorld(container: HTMLElement, base: string): Promise<
     const placed: Record<string, number> = {}
     for (const p of art.layout.items) placed[p.art] = (placed[p.art] ?? 0) + 1
     const f = art.focus()
-    bus.emit('art_state', { library: art.library, held: art.held?.id ?? null, layout: art.layout, selected: art.selected, placed, hands: art.hands, focus: f ? { art: f.art.id, placed: f.placed?.id ?? null, look: art.lookOf(f.art, f.placed) } : null })
+    bus.emit('art_state', { library: art.library, held: art.held?.id ?? null, layout: art.layout, selected: art.selected, placed, hands: art.hands, focus: f ? { art: f.art.id, placed: f.placed?.id ?? null, look: art.lookOf(f.art, f.placed), parts: art.partNames(f.art) } : null })
   }
   art.onChange = artSnapshot
   await art.load()
@@ -141,6 +141,12 @@ export async function startWorld(container: HTMLElement, base: string): Promise<
   walker.onChange = () => art.onLevelChange()
 
   bus.emit('play', { settings: { ...input.settings } })
+  // the share link (ART.md §4): ?layout=<name> opens a layout from the repo over the draft
+  const wanted = new URLSearchParams(location.search).get('layout')
+  if (wanted) {
+    fetch(`${DATA}layouts/${wanted.replace(/[^a-z0-9_-]+/gi, '-')}.json`).then((r) => (r.ok ? r.text() : Promise.reject(new Error(`${r.status}`))))
+      .then((text) => art.importFile(text)).then(() => bus.toast(`layout ${wanted} loaded from the repo`, 'warn')).catch(() => bus.toast(`no layout called ${wanted} in the repo`, 'bad'))
+  }
   bus.emit('world_ready', { hangWalls: level.walls.filter((w) => w.hang !== false).length, stairs: level.stairs.length, doors: built.doors.length, floors: level.levels.length, eyeCm: Math.round(level.eyeHeight * 100), walls: level.walls.length })
 
   // ---- minimap: the UI hands over two canvases -------------------------------------------------------
@@ -284,6 +290,17 @@ export async function startWorld(container: HTMLElement, base: string): Promise<
   }
   document.addEventListener('pointerlockchange', () => { if (!input.locked && !menuOpen && !bigShown) { menuOpen = true; closeTouch(); bus.emit('menu', { show: true }) } })
   bus.on('menu_close', () => closeMenu())
+  bus.on('ui_ring', ({ open, x, y }) => { if (open) input.openRing(x, y); else input.closeRing() })
+  // token save (ART.md §4, the owner's path): layouts/<name>.json into the repo through the GitHub contents API
+  bus.on('repo_save', ({ name, token }) => {
+    const f = art.exportFile(); const path = `layouts/${(name || art.layout.name || 'layout').replace(/[^a-z0-9_-]+/gi, '-').toLowerCase()}.json`
+    const api = `https://api.github.com/repos/koan-shdw/koan-hang/contents/${path}`
+    const headers = { Authorization: `Bearer ${token}`, Accept: 'application/vnd.github+json', 'Content-Type': 'application/json' }
+    const body = (sha?: string) => JSON.stringify({ message: `layout: ${path}`, content: btoa(unescape(encodeURIComponent(f.json))), sha })
+    fetch(api, { headers }).then((r) => (r.ok ? r.json() : null)).then((cur) => fetch(api, { method: 'PUT', headers, body: body(cur?.sha) }))
+      .then(async (r) => { if (!r.ok) throw new Error(`${r.status} ${(await r.text()).slice(0, 120)}`); bus.emit('repo_saved', { ok: true, url: `${location.origin}${location.pathname}?layout=${path.slice(8, -5)}` }); bus.toast(`saved to the repo · ${path}`, 'warn') })
+      .catch((e) => { bus.emit('repo_saved', { ok: false, error: (e as Error).message }); bus.toast(`repo save failed · ${(e as Error).message}`, 'bad') })
+  })
   bus.on('touch_action', ({ action }) => touchAction(action))
 
   // ---- loop --------------------------------------------------------------------------------------------------

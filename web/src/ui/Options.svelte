@@ -19,6 +19,10 @@
     bus.emit('import_file', { text, name: f.name })
   }
   const back = () => bus.emit('menu_close', {})
+  let token = $state('')
+  try { token = localStorage.getItem('shdw-world-token') ?? '' } catch { /* private */ }
+  const saveRepo = () => { try { localStorage.setItem('shdw-world-token', token) } catch { /* private */ } bus.emit('repo_save', { name: ui.art?.layout.name ?? 'layout', token }) }
+  const copy = (s: string) => { void navigator.clipboard?.writeText(s) }
   const num = (e: Event) => Number((e.currentTarget as HTMLInputElement).value)
 </script>
 
@@ -47,6 +51,12 @@
           </div>
           <input type="file" accept=".json" hidden bind:this={loadI} onchange={() => { if (loadI?.files?.[0]) void load(loadI.files[0]); if (loadI) loadI.value = '' }} />
           <div class="note">{count} works · saved in this browser</div>
+          <div class="legend">the repo</div>
+          <Row label="github token"><input type="password" placeholder="ghp_…" bind:value={token} /></Row>
+          <div class="chips"><button class="chip" onclick={saveRepo} disabled={!token}>save to repo</button>{#if ui.repo.url}<button class="chip" onclick={() => copy(ui.repo.url)}>copy share link</button>{/if}</div>
+          {#if ui.repo.url}<div class="note num">{ui.repo.url}</div>{/if}
+          {#if ui.repo.error}<div class="note" style="color: var(--bad)">{ui.repo.error}</div>{/if}
+          <div class="note">a layout in the repo opens at ?layout=name · Yozo saves a file, you drop it here, save to repo, send the link</div>
         {:else}
           <table class="keys">
             <tbody>

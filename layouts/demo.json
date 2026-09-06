@@ -1,0 +1,38 @@
+{
+ "format": "koan-hang-layout/2",
+ "name": "demo",
+ "guides": {
+  "snap": "top",
+  "top": 200,
+  "centre": 150,
+  "bottom": 100,
+  "gap": 10,
+  "show": true
+ },
+ "items": [
+  {
+   "id": "s-demo-1",
+   "art": "yozo-vol-2",
+   "kind": "sculpture",
+   "wall": "",
+   "level": "ground",
+   "u": 0,
+   "topY": 0,
+   "snap": null,
+   "pos": [
+    -3.0,
+    -5.54,
+    -1.2
+   ],
+   "yaw": 0.4,
+   "colour": "#f2f2ee",
+   "texture": null,
+   "plinth": {
+    "w": 40,
+    "d": 40,
+    "h": 100,
+    "colour": "#f4f4f0"
+   }
+  }
+ ]
+}
