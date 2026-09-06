@@ -7,6 +7,8 @@ export type ToastKind = 'ok' | 'warn' | 'bad'
 export type Quality = 'full' | 'balanced' | 'low'
 export type FxKey = 'lut' | 'sky' | 'plants' | 'glass' | 'surface' | 'outline' | 'dither' | 'smaa'
 export type FxState = Record<FxKey, boolean>
+export interface PlaySettings { sensitivity: number; fov: number; reduceMotion: boolean; headBob: boolean }
+export interface SoundSettings { master: number; ui: number; world: number; muted: boolean }
 
 export interface WalkSnapshot { level: string; levelName: string; x: number; z: number; onStair: boolean; locked: boolean }
 export interface HudSnapshot { hint: 'play' | null; cross: boolean; doorTip: string | null; hangTip: string | null }
@@ -26,6 +28,9 @@ export interface Events {
   hud: HudSnapshot
   art_state: ArtSnapshot
   menu: { show: boolean; tab?: string }
+  play: { settings: PlaySettings }
+  sound: { settings: SoundSettings }
+  sfx: { name: string; at?: [number, number, number]; pitch?: number }
   touch: { touch: TouchSnapshot | null }
   look: { look: Look }
   fx: { state: FxState }
@@ -37,6 +42,8 @@ export interface Events {
   anchor: { id: string; x: number; y: number; visible: boolean; text?: string }   // R3: world points the UI follows (HANG widget, work labels)
   // ui → world
   menu_close: Record<string, never>
+  set_play: { patch: Partial<PlaySettings> }
+  set_sound: { patch: Partial<SoundSettings> }
   touch_action: { action: TouchAction }
   set_look: { look: Look }
   set_fx: { key: FxKey; on: boolean }

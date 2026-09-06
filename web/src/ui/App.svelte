@@ -21,6 +21,9 @@
     onviewport(viewport)
     return off
   })
+  // every button: hover and press sounds (GAME.md §1), one delegated listener
+  const uiHover = (e: MouseEvent) => { const t = (e.target as HTMLElement).closest?.('button'); if (t && !t.disabled) bus.emit('sfx', { name: 'hover' }) }
+  const uiClick = (e: MouseEvent) => { const t = (e.target as HTMLElement).closest?.('button, input[type=checkbox]'); if (t) bus.emit('sfx', { name: 'click' }) }
   const mapClick = (e: MouseEvent) => { const r = big.getBoundingClientRect(); bus.emit('map_click', { px: e.clientX - r.left, py: e.clientY - r.top }) }
 </script>
 
@@ -42,6 +45,7 @@
   <WallWidget />
 </div>
 
+<svelte:document onmouseover={uiHover} onclick={uiClick} />
 <div class="mark top">SHDW<b>.world</b></div>
 
 <div class="bottom" class:dim={!ui.hud.cross}>

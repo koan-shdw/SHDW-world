@@ -7,7 +7,10 @@ import type { Placed } from './art/art'
 import { Renderer } from './renderer'
 import { Loader } from './loader'
 import { loadLevel, buildLevel, updateDoors, floorOf, setWireColor, meshAudit, skyLeakAudit, applyTextures, worldUVs, MAPS, type Level } from './room/level'
-import { Walker, isTyping } from './walk'
+import { Walker } from './walk'
+import { Input, type Verb } from './input'
+import { Feel } from './feel'
+import { Sounds } from '../audio/sounds'
 import { Minimap } from './minimap'
 import { ArtSystem } from './art/art'
 import { Anchors } from './anchors'
@@ -88,7 +91,19 @@ export async function startWorld(container: HTMLElement, base: string): Promise<
   // ---- walk, art -------------------------------------------------------------------------------------
   const walker = new Walker(level, camera, renderer.gl.domElement)
   walker.doors = built.doors
+  const input = new Input(renderer.gl.domElement)
+  const feel = new Feel(); feel.reduce = input.settings.reduceMotion
+  const sounds = new Sounds()
+  const sfx = (name: string, at?: THREE.Vector3) => bus.emit('sfx', { name, at: at ? [at.x, at.y, at.z] : undefined })
+  walker.keys = input.keys
+  walker.headBob = input.settings.headBob
+  camera.fov = input.settings.fov; camera.updateProjectionMatrix()
+  input.onLook = (dx, dy) => walker.look(dx, dy)
+  input.onLockChange = (on) => walker.setLocked(on)
+  walker.onStep = (footing, running) => bus.emit('sfx', { name: `step-${footing}`, pitch: running ? 1.1 : 1 })
+  walker.onLevelStep = () => { feel.dip(walker.dip, 0.03); sfx('step-concrete') }
   const art = new ArtSystem(level, scene, walker, camera, DATA, loader)
+  art.feel = feel; art.sfx = sfx
   art.occluder = occluder
   art.floorRay = (origin, dir, far) => { bvhRay.origin.copy(origin); bvhRay.direction.copy(dir); const h = roomBVH.raycastFirst(bvhRay, THREE.DoubleSide, 0, far); return h && h.face ? { point: h.point, ny: Math.abs(h.face.normal.y), dist: h.distance } : null }
   art.tileLoader = (name) => { const spec = MAPS[name]; if (!spec) return Promise.reject(new Error(`no tile ${name}`)); return tile(spec.file) }
@@ -124,6 +139,7 @@ export async function startWorld(container: HTMLElement, base: string): Promise<
   artSnapshot()
   walker.onChange = () => art.onLevelChange()
 
+  bus.emit('play', { settings: { ...input.settings } }); bus.emit('sound', { settings: { ...sounds.settings } })
   bus.emit('world_ready', { hangWalls: level.walls.filter((w) => w.hang !== false).length, stairs: level.stairs.length, doors: built.doors.length, floors: level.levels.length, eyeCm: Math.round(level.eyeHeight * 100), walls: level.walls.length })
 
   // ---- minimap: the UI hands over two canvases -------------------------------------------------------
@@ -139,8 +155,16 @@ export async function startWorld(container: HTMLElement, base: string): Promise<
     bus.on('accent', ({ css }) => setWireColor(built.wire, css)),
     bus.on('hold', ({ id }) => {
       const a = id ? art.library.find((x) => x.id === id) ?? null : null
-      art.hold(a && art.held?.id === a.id ? null : a)
-      bus.toast(art.held ? `holding ${art.held.title} · look at a wall, click` : 'put down')
+      if (a && art.isPlaced(a.id)) { bus.toast(`${a.title} is on the wall · walk up to it and press e`, 'warn'); sfx('nope'); return }
+      if (a && art.held?.id === a.id) { art.hold(null); sfx('putback'); bus.toast('put back'); return }
+      art.hold(a)
+      if (art.held) bus.toast(`holding ${art.held.title} · look at a wall, click`)
+    }),
+    bus.on('set_play', ({ patch }) => {
+      input.setPlay(patch)
+      if (patch.fov !== undefined) feel.fov(camera, patch.fov)
+      if (patch.reduceMotion !== undefined) feel.reduce = patch.reduceMotion
+      if (patch.headBob !== undefined) walker.headBob = patch.headBob
     }),
     bus.on('add_local', ({ item }) => { void art.addLocal(item).then((a) => bus.toast(`${a.title} · ${a.w} × ${a.h} × ${a.d} cm in the library`)) }),
     bus.on('remove_local', ({ id }) => { void art.removeLocal(id) }),
@@ -157,7 +181,7 @@ export async function startWorld(container: HTMLElement, base: string): Promise<
     }),
     bus.on('set_name', ({ name }) => { art.layout.name = name || 'draft'; art.autosave(); artSnapshot() }),
     bus.on('export_file', () => { const f = art.exportFile(); bus.emit('file_ready', f) }),
-    bus.on('import_file', ({ text, name }) => { void art.importFile(text).then((r) => bus.toast(`loaded ${name} · ${r.works} works · ${r.art} new images`)).catch((e) => bus.toast((e as Error).message, 'bad')) }),
+    bus.on('import_file', ({ text, name }) => { void art.importFile(text).then((r) => bus.toast(`loaded ${name} · ${r.works} works · ${r.art} new images${art.lastImportDropped ? ` · ${art.lastImportDropped} duplicate(s) dropped, one of each` : ''}`)).catch((e) => bus.toast((e as Error).message, 'bad')) }),
     bus.on('clear_draft', () => art.clearDraft()),
     bus.on('mount_maps', ({ small, big }) => { minimap = new Minimap(level, small, big) }),
     bus.on('map_click', ({ px, py }) => {
@@ -166,96 +190,103 @@ export async function startWorld(container: HTMLElement, base: string): Promise<
       else bus.toast('not a floor there', 'warn')
     }),
     bus.on('map_toggle', () => showMap(!bigShown)),
-    bus.on('menu_close', () => closeMenu()),
-    bus.on('touch_action', ({ action }) => touchAction(action)),
   )
 
-  // ---- keys (gate 1 rules, GAME-UI §3-§6 shell) -----------------------------------------------------------------
-  const toggleDoor = () => {
-    const d = walker.nearestDoor(); if (!d) return
-    if (!d.opening.door?.toggle) { bus.toast('this door does not open', 'warn'); return }
-    d.open = !d.open
+  // ---- verbs (GAME.md §1): click = do, E = touch, right click / Q = put back, R = turn, 1-0 = pick, wheel = slide ----------
+  const toggleDoor = (): boolean => {
+    const d = walker.nearestDoor(); if (!d) return false
+    if (!d.opening.door?.toggle) { bus.toast('locked', 'warn'); sfx('nope'); return true }
+    d.open = !d.open; sfx(d.open ? 'door-open' : 'door-close', new THREE.Vector3(camera.position.x, camera.position.y, camera.position.z)); return true
   }
-  const lock = () => { if (!walker.state.locked) renderer.gl.domElement.requestPointerLock() }
-  const openMenu = (tab?: string) => { menuOpen = true; closeTouch(); walker.release(); bus.emit('menu', { show: true, tab }) }
-  const closeMenu = () => { if (!menuOpen) return; menuOpen = false; bus.emit('menu', { show: false }); lock() }
+  const openMenu = (tab?: string) => { if (menuOpen) return; menuOpen = true; closeTouch(); input.release(); sfx('menu-open'); bus.emit('menu', { show: true, tab }) }
+  const closeMenu = () => { if (!menuOpen) return; menuOpen = false; sfx('menu-close'); bus.emit('menu', { show: false }); void input.lock() }
   const touchSnap = (p: Placed) => { const a = art.library.find((x) => x.id === p.art); return { placed: p.id, kind: p.kind, title: a?.title ?? 'work', size: a ? `${a.w} × ${a.h} × ${a.d} cm` : '' } }
-  const openTouch = (p: Placed) => { touch = p; art.selected = p.id; artSnapshot(); bus.emit('touch', { touch: touchSnap(p) }) }
-  const closeTouch = () => { if (!touch) return; touch = null; art.selected = null; anchors.set('touch', null); artSnapshot(); bus.emit('touch', { touch: null }) }
+  const openTouch = (p: Placed) => { touch = p; art.selected = p.id; artSnapshot(); sfx('open'); bus.emit('touch', { touch: touchSnap(p) }) }
+  const closeTouch = () => { if (!touch) return; touch = null; art.selected = null; anchors.set('touch', null); artSnapshot(); sfx('close'); bus.emit('touch', { touch: null }) }
   const touchAction = (action: TouchAction) => {
     const p = touch; if (!p) return
     switch (action) {
-      case 'move': closeTouch(); art.selected = p.id; if (art.pickup()) bus.toast(`${art.held?.title} in your hands · look, click puts it back · q puts it down`); break
-      case 'down': closeTouch(); art.selected = p.id; if (art.remove()) bus.toast(`${nameOf(p.art)} taken down · ctrl z brings it back`); break
-      case 'swap': case 'swapback': { const n = art.swapInPlace(p, action === 'swap' ? 1 : -1); if (n) { bus.toast(`swapped for ${n.title}`); bus.emit('touch', { touch: touchSnap(p) }) } else bus.toast('nothing else of that kind in the library', 'warn'); break }
-      case 'turn': case 'turnback': art.selected = p.id; if (art.rotate(action === 'turn' ? 15 : -15)) bus.toast('turned 15°'); break
-      case 'alignWall': bus.toast(`${art.snapAll(p.wall)} aligned on this wall`); break
-      case 'alignAll': bus.toast(`${art.snapAll()} aligned`); break
+      case 'move': closeTouch(); art.selected = p.id; if (art.pickup()) bus.toast(`${art.held?.title} in your hands · click puts it back · right click puts it down`); break
+      case 'down': closeTouch(); art.selected = p.id; if (art.remove()) bus.toast(`${nameOf(p.art)} taken down · back in the bar · ctrl z brings it back`); break
+      case 'swap': case 'swapback': { const n = art.swapInPlace(p, action === 'swap' ? 1 : -1); if (n) { sfx('swap'); bus.toast(`swapped for ${n.title}`); bus.emit('touch', { touch: touchSnap(p) }) } else { sfx('nope'); bus.toast('nothing free of that kind in the bar', 'warn') } break }
+      case 'turn': case 'turnback': art.selected = p.id; art.rotate(action === 'turn' ? 15 : -15); break
+      case 'alignWall': bus.toast(`${art.snapAll(p.wall)} aligned on this wall`); sfx('snap'); break
+      case 'alignAll': bus.toast(`${art.snapAll()} aligned`); sfx('snap'); break
       case 'done': closeTouch(); break
     }
   }
-  const onKey = (e: KeyboardEvent) => {
-    if (isTyping(e)) return
-    if (menuOpen) { if (e.code === 'Escape') closeMenu(); return }
-    if (bigShown) { if (e.code === 'Escape' || e.code === 'KeyM') showMap(false); return }
-    if (e.code === 'Backquote') { bus.emit('debug_toggle', {}); return }
-    if ((e.ctrlKey || e.metaKey) && e.code === 'KeyZ') { e.preventDefault(); closeTouch(); bus.toast((e.shiftKey ? art.doRedo() : art.doUndo()) ? (e.shiftKey ? 'redo' : 'undo') : 'nothing to undo'); return }
-    if (touch) {
-      if (e.code === 'Escape' || e.code === 'KeyE') { closeTouch(); return }
-      if (e.code === 'Digit1') { touchAction('move'); return }
-      if (e.code === 'Digit2') { touchAction('down'); return }
-      if (e.code === 'Digit3') { touchAction(e.shiftKey ? 'swapback' : 'swap'); return }
-      if (e.code === 'Digit4') { touchAction(e.shiftKey ? 'turnback' : 'turn'); return }
-      if (e.code === 'Comma') { touchAction('swapback'); return }
-      if (e.code === 'Period') { touchAction('swap'); return }
-      if (e.code === 'KeyR') { touchAction(e.shiftKey ? 'turnback' : 'turn'); return }
-      if (e.code === 'Delete' || e.code === 'Backspace') { touchAction('down'); return }
-      if (e.code.startsWith('Arrow')) { const st = e.shiftKey ? 10 : 1; const du = e.code === 'ArrowLeft' ? -st : e.code === 'ArrowRight' ? st : 0; const dy = e.code === 'ArrowUp' ? st : e.code === 'ArrowDown' ? -st : 0; art.selected = touch.id; if (art.nudge(du, dy)) e.preventDefault(); return }
-      return
-    }
-    if (e.code === 'Escape') { if (walker.state.locked) { openMenu(); return } openMenu(); return }
-    if (!walker.state.locked) return
-    if (e.code === 'BracketLeft' || e.code === 'Comma') { art.swap(-1); return }
-    if (e.code === 'BracketRight' || e.code === 'Period') { art.swap(1); return }
-    if (/^Digit[0-9]$/.test(e.code)) { const n = Number(e.code.slice(5)); const a = art.library[n === 0 ? 9 : n - 1]; if (a) art.hold(art.held?.id === a.id ? null : a); return }
-    if (e.code === 'Tab') { e.preventDefault(); const p = art.selectNext(); artSnapshot(); bus.toast(p ? `selected ${nameOf(p.art)} · delete, arrows, e` : 'nothing selected'); return }
-    if (e.code === 'KeyH') { art.hands = !art.hands; artSnapshot(); bus.toast(art.hands ? 'hands view on' : 'hands view off'); return }
-    if (e.code === 'KeyQ') { art.hold(null); return }
-    if (e.code === 'KeyR') { if (art.rotate(e.shiftKey ? -15 : 15)) { artSnapshot(); bus.toast('turned 15°') } return }
-    if (e.code === 'Delete' || e.code === 'Backspace') { const t = art.target(); if (t && art.remove()) bus.toast(`${nameOf(t.art)} taken down · ctrl z brings it back`); else bus.toast('look at a hung work, or tab to select one', 'warn'); return }
-    if (e.code.startsWith('Arrow')) { const st = e.shiftKey ? 10 : 1; const du = e.code === 'ArrowLeft' ? -st : e.code === 'ArrowRight' ? st : 0; const dy = e.code === 'ArrowUp' ? st : e.code === 'ArrowDown' ? -st : 0; if (art.nudge(du, dy)) e.preventDefault(); return }
-    if (e.code === 'KeyE') {
-      if (!art.held) { const t = art.target(); if (t) { openTouch(t); return } }
-      toggleDoor(); return
-    }
-    if (e.code === 'KeyM') showMap(true)
-    else if (e.key === '?') openMenu('keys')
+  const putBack = () => {
+    if (touch) { closeTouch(); return }
+    if (art.held) { art.hold(null); sfx('putback'); bus.toast('put back in the bar'); return }
   }
-  window.addEventListener('keydown', onKey)
-  const onDown = (e: MouseEvent) => {
-    if (!walker.state.locked || e.button !== 0) return
-    if (touch) { return }
-    const r = art.place()
-    if (r === 'placed') bus.toast(art.held?.kind === 'sculpture' ? `placed ${art.held.title} · ctrl z undoes` : `hung ${art.held?.title} · ctrl z undoes · walk up and press e to touch it`)
-    else if (r === 'refused') bus.toast(art.preview.why || (art.held?.kind === 'sculpture' ? 'look at the floor' : 'look at a hang wall'), 'warn')
-    else if (r === 'picked') bus.toast(`${art.held?.title} in your hands · look, click puts it back · q puts it down`)
+  input.onVerb = (verb: Verb, e) => {
+    if (menuOpen) { if (verb === 'menu') closeMenu(); return }
+    if (bigShown) { if (verb === 'menu' || verb === 'map') showMap(false); return }
+    switch (verb) {
+      case 'menu': openMenu(); break
+      case 'keys': openMenu('keys'); break
+      case 'debug': bus.emit('debug_toggle', {}); break
+      case 'undo': case 'redo': closeTouch(); bus.toast((verb === 'redo' ? art.doRedo() : art.doUndo()) ? verb : 'nothing to undo'); sfx('click'); break
+      case 'do': {
+        if (touch) return
+        const r = art.place()
+        if (r === 'placed') bus.toast('down · walk up to it and press e to touch it')
+        else if (r === 'refused') bus.toast(art.preview.why || (art.held?.kind === 'sculpture' ? 'look at the floor' : 'look at a hang wall'), 'warn')
+        else if (r === 'picked') bus.toast(`${art.held?.title} in your hands`)
+        else input.clearClick()
+        break
+      }
+      case 'touch': {
+        if (touch) { closeTouch(); return }
+        if (!art.held) { const t = art.target(); if (t) { openTouch(t); return } }
+        if (!toggleDoor()) sfx('nope')
+        break
+      }
+      case 'putback': putBack(); break
+      case 'turn': case 'turnback': if (touch) touchAction(verb); else if (!art.rotate(verb === 'turn' ? 15 : -15)) bus.toast('hold or look at a sculpture first', 'warn'); else artSnapshot(); break
+      case 'cycleNext': case 'cyclePrev': if (touch) touchAction(verb === 'cycleNext' ? 'swap' : 'swapback'); else { art.swap(verb === 'cycleNext' ? 1 : -1); sfx('hover') } break
+      case 'map': showMap(true); break
+      case 'hands': art.hands = !art.hands; artSnapshot(); bus.toast(art.hands ? 'hands view on' : 'hands view off'); break
+      case 'select': { const p = art.selectNext(); artSnapshot(); sfx('hover'); bus.toast(p ? `selected ${nameOf(p.art)} · e touch · delete · arrows` : 'nothing selected'); break }
+      case 'remove': { if (touch) { touchAction('down'); return } const t = art.target(); if (t && art.remove()) bus.toast(`${nameOf(t.art)} taken down · back in the bar · ctrl z brings it back`); else { bus.toast('look at a hung work, or tab to select one', 'warn'); sfx('nope') } break }
+    }
+    void e
   }
-  const onWheel = (e: WheelEvent) => { if (!walker.state.locked) return; e.preventDefault(); if (touch) touchAction(e.deltaY > 0 ? 'swap' : 'swapback'); else art.swap(e.deltaY > 0 ? 1 : -1) }
-  renderer.gl.domElement.addEventListener('mousedown', onDown)
-  renderer.gl.domElement.addEventListener('wheel', onWheel, { passive: false })
-  document.addEventListener('pointerlockchange', () => { if (!walker.state.locked && !menuOpen && !bigShown) { /* the browser let go (esc): the menu opens */ menuOpen = true; closeTouch(); bus.emit('menu', { show: true }) } })
+  input.onSlot = (n) => {
+    if (menuOpen) return
+    if (touch) { if (n <= 3) touchAction((['move', 'down', 'swap', 'turn'] as TouchAction[])[n]); return }
+    const a = art.library[n]; if (!a) { sfx('nope'); return }
+    bus.emit('hold', { id: a.id })
+  }
+  input.onArrow = (du, dy, e) => {
+    if (menuOpen) return
+    if (touch) art.selected = touch.id
+    if (art.nudge(du, dy)) { e.preventDefault(); sfx('nudge') }
+  }
+  input.onWheel = (step) => { if (menuOpen) return; if (touch) touchAction(step > 0 ? 'swap' : 'swapback'); else { art.swap(step); sfx('hover') } }
+  document.addEventListener('pointerlockchange', () => { if (!input.locked && !menuOpen && !bigShown) { menuOpen = true; closeTouch(); bus.emit('menu', { show: true }) } })
+  bus.on('menu_close', () => closeMenu())
+  bus.on('touch_action', ({ action }) => touchAction(action))
 
   // ---- loop --------------------------------------------------------------------------------------------------
   let lastWalk = '', lastHud = '', lastFocus = ''
   let elapsed = 0
   const tv = new THREE.Vector3()
+  const STEP = 1 / 120; let acc = 0
   renderer.start((dt) => {
     elapsed += dt; looks.update(elapsed)
-    walker.update(dt)
+    // fixed step (GAME.md §1): the walker moves in 1/120 s steps, the camera blends between the last two
+    acc += Math.min(dt, 0.1); let steps = 0
+    while (acc >= STEP && steps < 12) { walker.snapshot(); walker.update(STEP); acc -= STEP; steps++ }
+    walker.applyCamera(Math.min(1, acc / STEP))
+    camera.updateMatrixWorld()
     updateDoors(built.doors, dt)
-    art.update()
+    art.update(dt, elapsed * 6)
+    // the click buffer: a click that came just before the ghost turned green still lands
+    if (art.held && art.preview.ok && input.takeClick()) input.onVerb?.('do', new MouseEvent('mousedown'))
     const s = walker.state
     const locked = s.locked
+    sounds.setListener(camera.position, new THREE.Vector3(0, 0, -1).applyQuaternion(camera.quaternion))
     // the touch menu follows its work and closes when you walk away
     if (touch) {
       const p = art.layout.items.find((x) => x.id === touch!.id)
@@ -272,8 +303,8 @@ export async function startWorld(container: HTMLElement, base: string): Promise<
       const pv = art.preview
       if (art.held) {
         hangTip = art.held.kind === 'sculpture'
-          ? (pv.floor ? (pv.ok ? `click · place here · r turns` : `can't place here · ${pv.why}`) : 'look at the floor')
-          : (pv.hit ? (pv.ok ? 'click · hang here' : `can't hang here · ${pv.why}`) : 'look at a wall')
+          ? (pv.floor ? (pv.ok ? 'click · place here · r turn · right click put back' : `can't place here · ${pv.why}`) : 'look at the floor · right click put back')
+          : (pv.hit ? (pv.ok ? 'click · hang here · right click put back' : `can't hang here · ${pv.why}`) : 'look at a wall · right click put back')
       } else if (art.selected && !touch) {
         const sel = art.layout.items.find((p) => p.id === art.selected)
         if (sel) hangTip = `${nameOf(sel.art)} selected · e touch · delete · arrows · tab next`
@@ -290,7 +321,7 @@ export async function startWorld(container: HTMLElement, base: string): Promise<
     minimap?.draw(s)
     // anchors: the wall widget rides the ghost; a touchable work carries its prompt
     anchors.set('hang-widget', locked && art.held?.kind === 'painting' && art.preview.hit ? art.preview.hit.point : null)
-    if (lookAt && !touch) { const a = art.library.find((x) => x.id === lookAt.art); const pf = floorOf(level, lookAt.level).floorY; const w = level.walls.find((x) => x.id === lookAt.wall); if (a && w && lookAt.kind === 'painting') { const [dx, dz] = [w.b[0] - w.a[0], w.b[1] - w.a[1]]; const L = Math.hypot(dx, dz) || 1; const uc = lookAt.u + a.w / 200; anchors.set('work', new THREE.Vector3(w.a[0] + dx / L * uc, pf + lookAt.topY + 0.08, w.a[1] + dz / L * uc), 'e · interact') } else if (a && lookAt.pos) anchors.set('work', new THREE.Vector3(lookAt.pos[0], lookAt.pos[1] + a.h / 100 + (lookAt.plinth?.h ?? 0) / 100 + 0.1, lookAt.pos[2]), 'e · interact') }
+    if (lookAt && !touch) { const a = art.library.find((x) => x.id === lookAt.art); const pf = floorOf(level, lookAt.level).floorY; const w = level.walls.find((x) => x.id === lookAt.wall); if (a && w && lookAt.kind === 'painting') { const [dx, dz] = [w.b[0] - w.a[0], w.b[1] - w.a[1]]; const L = Math.hypot(dx, dz) || 1; const uc = lookAt.u + a.w / 200; anchors.set('work', new THREE.Vector3(w.a[0] + dx / L * uc, pf + lookAt.topY + 0.08, w.a[1] + dz / L * uc), 'e · touch') } else if (a && lookAt.pos) anchors.set('work', new THREE.Vector3(lookAt.pos[0], lookAt.pos[1] + a.h / 100 + (lookAt.plinth?.h ?? 0) / 100 + 0.1, lookAt.pos[2]), 'e · touch') }
     else anchors.set('work', null)
     const sz = renderer.size; anchors.publish(camera, sz.x, sz.y)
   })
@@ -316,18 +347,17 @@ export async function startWorld(container: HTMLElement, base: string): Promise<
     return r.text()
   }
   const view = (lvl: string, x: number, z: number, yawDeg: number, pitchDeg = 0): void => {
-    walker.teleport(lvl, x, z); walker.state.yaw = THREE.MathUtils.degToRad(yawDeg); walker.state.pitch = THREE.MathUtils.degToRad(pitchDeg); walker.update(0.016)
+    walker.teleport(lvl, x, z); walker.state.yaw = THREE.MathUtils.degToRad(yawDeg); walker.state.pitch = THREE.MathUtils.degToRad(pitchDeg); walker.snapshot(); walker.update(0.016); walker.applyCamera(1); camera.updateMatrixWorld()
   }
   ;(window as unknown as { koanHang: unknown }).koanHang = {
     walker, level, scene, renderer: renderer.gl, composer: renderer.composer, camera, shot, plan, view, THREE, built, toggleDoor, art, loader, bus, roomBVH,
     setMode: () => undefined, meshAudit: () => meshAudit(level, built.group), skyLeakAudit: () => skyLeakAudit(level, built.group, built.doors),
-    quality: (q: 'full' | 'balanced' | 'low') => renderer.setQuality(q), getQuality: () => renderer.quality, smaa: renderer.smaa, looks,
+    input, feel, sounds, quality: (q: 'full' | 'balanced' | 'low') => renderer.setQuality(q), getQuality: () => renderer.quality, smaa: renderer.smaa, looks,
   }
 
   const dispose = () => {
     for (const off of offs) off()
-    window.removeEventListener('keydown', onKey)
-    renderer.gl.domElement.removeEventListener('mousedown', onDown); renderer.gl.domElement.removeEventListener('wheel', onWheel)
+    input.onVerb = null; input.onLook = null; input.onSlot = null; input.onArrow = null; input.onWheel = null
     renderer.active = false; loader.dispose(); renderer.gl.dispose()
   }
   return { renderer, level, art, walker, dispose }

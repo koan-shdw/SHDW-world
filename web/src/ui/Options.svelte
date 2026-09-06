@@ -6,7 +6,7 @@
   import { ui } from './state.svelte'
   import { PRESET_THEMES, applyTheme, currentTheme, accentColor } from './themes'
   let { version }: { version: string } = $props()
-  const tabs = ['level', 'looks', 'file', 'theme', 'keys', 'about']
+  const tabs = ['play', 'level', 'looks', 'sound', 'file', 'theme', 'keys', 'about']
   const looks: { id: Look; label: string; tip: string }[] = [
     { id: 'clean', label: 'clean', tip: 'the rebuilt level, plain materials' }, { id: 'wire', label: 'wire', tip: 'clean level with its edges drawn' }, { id: 'textured', label: 'textured', tip: "the scan's own surfaces, baked and tiled" },
   ]
@@ -48,7 +48,20 @@
         <button class="tab back" onclick={back}>back <small>esc</small></button>
       </div>
       <div class="content">
-        {#if ui.menuTab === 'level'}
+        {#if ui.menuTab === 'play' && ui.play}
+          <Row label="mouse" tip="how far a hand move turns you · raw input, no smoothing"><input type="range" min="0.3" max="3" step="0.05" value={ui.play.sensitivity} oninput={(e) => bus.emit('set_play', { patch: { sensitivity: Number((e.currentTarget as HTMLInputElement).value) } })} /></Row>
+          <div class="note">sensitivity {ui.play.sensitivity.toFixed(2)}</div>
+          <Row label="field of view" tip="60 narrow · 75 default · 100 wide"><input type="range" min="60" max="100" step="1" value={ui.play.fov} oninput={(e) => bus.emit('set_play', { patch: { fov: Number((e.currentTarget as HTMLInputElement).value) } })} /></Row>
+          <div class="note">fov {ui.play.fov}</div>
+          <Row label="head bob" tip="the small rise and fall while walking"><input type="checkbox" checked={ui.play.headBob} onchange={(e) => bus.emit('set_play', { patch: { headBob: (e.currentTarget as HTMLInputElement).checked } })} /></Row>
+          <Row label="reduce motion" tip="every move lands at once, no pops, no shakes"><input type="checkbox" checked={ui.play.reduceMotion} onchange={(e) => bus.emit('set_play', { patch: { reduceMotion: (e.currentTarget as HTMLInputElement).checked } })} /></Row>
+        {:else if ui.menuTab === 'sound' && ui.sound}
+          <Row label="mute"><input type="checkbox" checked={ui.sound.muted} onchange={(e) => bus.emit('set_sound', { patch: { muted: (e.currentTarget as HTMLInputElement).checked } })} /></Row>
+          <Row label="master"><input type="range" min="0" max="1" step="0.05" value={ui.sound.master} oninput={(e) => bus.emit('set_sound', { patch: { master: Number((e.currentTarget as HTMLInputElement).value) } })} /></Row>
+          <Row label="ui"><input type="range" min="0" max="1" step="0.05" value={ui.sound.ui} oninput={(e) => bus.emit('set_sound', { patch: { ui: Number((e.currentTarget as HTMLInputElement).value) } })} /></Row>
+          <Row label="world"><input type="range" min="0" max="1" step="0.05" value={ui.sound.world} oninput={(e) => bus.emit('set_sound', { patch: { world: Number((e.currentTarget as HTMLInputElement).value) } })} /></Row>
+          <div class="note">the sounds are synthesised placeholders · real ones drop in by name</div>
+        {:else if ui.menuTab === 'level'}
           <div class="legend">look</div>
           <Chips options={looks} value={ui.look} onpick={(v) => bus.emit('set_look', { look: v })} />
           <Row label="eye height cm" tip="camera height above the floor · 160 = average eye"><input type="number" min="100" max="220" step="1" bind:value={eye} onchange={() => bus.emit('set_eye', { cm: Number(eye) })} /></Row>
@@ -78,7 +91,8 @@
             <tbody>
               <tr><td>w a s d</td><td>walk · shift = run</td></tr>
               <tr><td>mouse</td><td>look · click = take the mouse</td></tr>
-              <tr><td>1-9 0 · scroll · , .</td><td>pick a work from the bar · again = put it down</td></tr>
+              <tr><td>1-9 0 · scroll · , .</td><td>pick a work from the bar · again = put it back</td></tr>
+              <tr><td>right click · q</td><td>put the held work back · close the touch menu</td></tr>
               <tr><td>click</td><td>hang or place the held work where you look</td></tr>
               <tr><td>e</td><td>touch the work you look at · move, take down, swap, turn · or the door</td></tr>
               <tr><td>tab</td><td>select the next hung work · delete, arrows act on it</td></tr>

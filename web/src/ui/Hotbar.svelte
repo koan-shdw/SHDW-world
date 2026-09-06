@@ -11,7 +11,8 @@
   const keyOf = (i: number) => (i < 9 ? String(i + 1) : i === 9 ? '0' : '')
   const thumb = (a: NonNullable<(typeof lib)[number]>) => a.kind === 'sculpture' ? a.thumb ?? '' : a.data ?? `${base}data/art/${a.file}`
   const hold = (id: string) => bus.emit('hold', { id })
-  const remove = (e: MouseEvent, id: string, title: string, local: boolean) => { e.preventDefault(); if (!local) { bus.toast('repo works stay', 'warn'); return } if (confirm(`remove ${title} from the library?`)) bus.emit('remove_local', { id }) }
+  // right click on a slot: the held one goes back; a free local one can leave the library
+  const remove = (e: MouseEvent, id: string, title: string, local: boolean) => { e.preventDefault(); if (ui.art?.held === id) { bus.emit('hold', { id }); return } if (ui.art?.placed[id]) { bus.toast(`${title} is on the wall`, 'warn'); return } if (!local) { bus.toast('repo works stay', 'warn'); return } if (confirm(`remove ${title} from the library?`)) bus.emit('remove_local', { id }) }
 </script>
 
 <div class="hotbar" class:dim={!ui.hud.cross}>
@@ -20,11 +21,11 @@
   {:else}
     {#each slots as s (s.i)}
       {#if s.a}
-        <button class="slot" class:held={s.a.id === ui.art?.held} title="{s.a.title} · {s.a.w} × {s.a.h} × {s.a.d} cm · click = hold · right click = remove"
+        <button class="slot" class:held={s.a.id === ui.art?.held} class:placed={!!ui.art?.placed[s.a.id]} title="{s.a.title} · {s.a.w} × {s.a.h} × {s.a.d} cm · {ui.art?.placed[s.a.id] ? 'on the wall · walk up to it, press e' : 'click = hold · right click = remove'}"
           onclick={() => hold(s.a!.id)} oncontextmenu={(e) => remove(e, s.a!.id, s.a!.title, !!(s.a!.data || s.a!.model?.startsWith('data:')))}>
           <span class="key">{keyOf(s.i)}</span>
           {#if thumb(s.a)}<img src={thumb(s.a)} alt={s.a.title} />{:else}<span class="model">…</span>{/if}
-          {#if ui.art?.placed[s.a.id]}<span class="count">×{ui.art.placed[s.a.id]}</span>{/if}
+          {#if ui.art?.placed[s.a.id]}<span class="count">{s.a.kind === 'sculpture' ? 'placed' : 'on wall'}</span>{/if}
         </button>
       {:else}
         <button class="slot empty" onclick={onadd} title="empty · drop a work here"><span class="key">{keyOf(s.i)}</span></button>

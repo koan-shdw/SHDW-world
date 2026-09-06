@@ -154,6 +154,8 @@ height cm with a slider drawn as a rail on the card, gap cm, `show line`. The da
 
 Each gate live on main, tested by script and screenshot, then his play.
 
+**F1 BUILT 2026-09-06**, live on main: `world/input.ts` (raw pointer lock with fallback, verbs, click buffer 120 ms, context menu suppressed), fixed 120 Hz step with camera interpolation, `world/feel.ts` on GSAP (snap, refuse shake, land pop, take-down flight, turn, nudge, hands rise, FOV glide, step dip), `audio/sounds.ts` (23 synthesised cues, positional, volumes, mute), the two laws in `art.ts` (`isPlaced`, hold refused, place empties the hands, swap only with free works, import dedupe), forgiving cone aim, hands view lagging the camera with a walking sway, head bob, footsteps by footing, options › play (mouse, fov, head bob, reduce motion) and › sound. PROVEN by script on localhost: place → hands empty; a placed work cannot be held; right click puts back; remove flies then frees the slot; duplicates dropped on import; audio context live. UNTESTED: his hands; raw-movement support on his Chrome (reported in the debug handle as `input.rawSupported`).
+
 ## OPEN
 
 - Music: a track or none.

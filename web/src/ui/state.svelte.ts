@@ -1,5 +1,5 @@
 // UI state (REMAKE.md §2, GAME-UI): what the HTML layer knows, fed by the bus. Svelte 5 runes. The UI never imports world/.
-import { bus, type Look, type RoomInfo, type WalkSnapshot, type HudSnapshot, type ArtSnapshot, type LoaderState, type ToastKind, type FxState, type Quality, type TouchSnapshot } from '../bus'
+import { bus, type Look, type RoomInfo, type WalkSnapshot, type HudSnapshot, type ArtSnapshot, type LoaderState, type ToastKind, type FxState, type Quality, type TouchSnapshot, type PlaySettings, type SoundSettings } from '../bus'
 
 export interface Toast { id: number; msg: string; kind: ToastKind }
 
@@ -17,6 +17,8 @@ export const ui = $state({
   menuShown: false,
   menuTab: 'level',
   touch: null as TouchSnapshot | null,
+  play: null as PlaySettings | null,
+  sound: null as SoundSettings | null,
   debugShown: false,
   toasts: [] as Toast[],
   anchors: {} as Record<string, { x: number; y: number; visible: boolean; text?: string }>,
@@ -35,6 +37,8 @@ bus.on('loader', (l) => { ui.loader = l })
 bus.on('map_show', ({ show }) => { ui.mapShown = show })
 bus.on('menu', ({ show, tab }) => { ui.menuShown = show; if (tab) ui.menuTab = tab })
 bus.on('touch', ({ touch }) => { ui.touch = touch })
+bus.on('play', ({ settings }) => { ui.play = settings })
+bus.on('sound', ({ settings }) => { ui.sound = settings })
 bus.on('debug_toggle', () => { ui.debugShown = !ui.debugShown })
 bus.on('anchor', (a) => { ui.anchors[a.id] = a })
 bus.on('toast', ({ msg, kind, ms }) => {

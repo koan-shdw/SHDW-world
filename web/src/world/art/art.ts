@@ -3,6 +3,7 @@ import * as THREE from 'three'
 import { type Level, type Wall, wallLength, wallDir, wallPoint, floorOf } from '../room/level'
 import type { Walker } from '../walk'
 import type { Loader } from '../loader'
+import type { Feel } from '../feel'
 
 export type SnapLine = 'top' | 'centre' | 'bottom' | 'free'
 export type Kind = 'painting' | 'sculpture'
@@ -65,6 +66,11 @@ export class ArtSystem {
   private modelPending = new Set<string>()
   private tiles = new Map<string, THREE.Texture>()
   onModel: ((a: ArtItem, g: THREE.Group) => void) | null = null   // a model landed: thumbnail time
+  feel: Feel | null = null                                          // the response envelope (GAME.md §1)
+  sfx: ((name: string, at?: THREE.Vector3) => void) | null = null
+  static CONE = THREE.MathUtils.degToRad(10)                        // forgiving aim: the nearest touchable inside this cone
+  private lastHit: string | null = null                             // the wall / floor the ghost is on, for the snap moment
+  private handTarget = new THREE.Vector3(); private handQuat = new THREE.Quaternion(); private handTmp = new THREE.Vector3()
   readonly group = new THREE.Group()              // placed works
   private ghost: THREE.Group | null = null
   private handMesh: THREE.Group | null = null
@@ -75,6 +81,7 @@ export class ArtSystem {
   private base: string
   private local: ArtItem[] = []
   private seq = 0
+  lastImportDropped = 0
 
   constructor(private lv: Level, private scene: THREE.Scene, private walker: Walker, private camera: THREE.Camera, base: string, private loader: Loader) {
     this.base = base
@@ -243,8 +250,10 @@ export class ArtSystem {
     for (const a of j.art ?? []) if (!this.library.find((x) => x.id === a.id)) { this.local.push(a); this.library.push(a); added++ }
     if (added) await idbSet('items', this.local)
     this.commit()
-    const seen = new Set<string>()
-    this.layout = { format: 'koan-hang-layout/2', name: j.name || 'layout', guides: { ...defaultGuides(), ...(j.guides ?? {}) }, items: (j.items ?? []).map((p) => { let id = p.id || `p-${(this.seq++).toString(36)}`; while (seen.has(id)) id = `${id}-${(this.seq++).toString(36)}`; seen.add(id); return { ...p, id, kind: p.kind ?? 'painting', level: p.level ?? 'ground', snap: p.snap ?? null } }) }
+    const seen = new Set<string>(); const seenArt = new Set<string>(); let dropped = 0
+    const once = (j.items ?? []).filter((p) => { if (seenArt.has(p.art)) { dropped++; return false } seenArt.add(p.art); return true })
+    this.lastImportDropped = dropped
+    this.layout = { format: 'koan-hang-layout/2', name: j.name || 'layout', guides: { ...defaultGuides(), ...(j.guides ?? {}) }, items: once.map((p) => { let id = p.id || `p-${(this.seq++).toString(36)}`; while (seen.has(id)) id = `${id}-${(this.seq++).toString(36)}`; seen.add(id); return { ...p, id, kind: p.kind ?? 'painting', level: p.level ?? 'ground', snap: p.snap ?? null } }) }
     this.rebuild(); this.autosave(); this.onChange?.()
     return { works: this.layout.items.length, art: added }
   }
@@ -266,18 +275,32 @@ export class ArtSystem {
   }
 
   // ---- holding and placing ------------------------------------------------------------------
+  /** GAME.md §0 law 1: one of each. A work on the wall stays on the wall until you touch it there */
+  isPlaced(id: string): boolean { return this.layout.items.some((p) => p.art === id) }
   hold(a: ArtItem | null): void {
+    if (a && this.isPlaced(a.id)) return
     if (this.ghost) { this.scene.remove(this.ghost); this.ghost = null }
-    if (this.handMesh) { this.camera.remove(this.handMesh); this.handMesh = null }
+    if (this.handMesh) { this.scene.remove(this.handMesh); this.handMesh = null }
+    this.lastHit = null
     this.held = a
     if (a) {
       this.ghost = this.meshFor(a, true); this.ghost.visible = false; this.scene.add(this.ghost)
       // in your hands: lower right of the view, scaled so the long side is 35 cm, tilted a touch
       const hm = this.meshFor(a); const k = 0.35 / Math.max(a.w, a.h, a.kind === 'sculpture' ? a.h + (this.lookOf(a).plinth?.h ?? 0) : 0) * 100
-      hm.scale.setScalar(k); hm.position.set(0.26, a.kind === 'sculpture' ? -0.32 : -0.2, -0.62); hm.rotation.set(-0.12, -0.45, 0.06)
-      hm.visible = false; this.camera.add(hm); this.handMesh = hm
+      hm.scale.setScalar(k); hm.visible = false; this.scene.add(hm); this.handMesh = hm   // in the scene, lagging the camera (GAME.md: alive in the hand)
+      this.handTarget.set(0.26, a.kind === 'sculpture' ? -0.32 : -0.2, -0.62)
+      this.placeHand(1); this.feel?.handsIn(hm, hm.position.y); this.sfx?.('pick')
     }
     this.onChange?.()
+  }
+  /** the hands view: a camera-relative rest point, followed with a lag, swaying with the walk */
+  private placeHand(k: number, sway = 0): void {
+    const hm = this.handMesh; if (!hm) return
+    this.handTmp.copy(this.handTarget); this.handTmp.y += Math.sin(sway) * 0.006; this.handTmp.x += Math.cos(sway * 0.5) * 0.004
+    this.handTmp.applyMatrix4(this.camera.matrixWorld)
+    hm.position.lerp(this.handTmp, k)
+    this.handQuat.copy(this.camera.quaternion).multiply(new THREE.Quaternion().setFromEuler(new THREE.Euler(-0.12, -0.45, 0.06)))
+    hm.quaternion.slerp(this.handQuat, k)
   }
   /** Tab: the next hung work becomes the selected one (glows); after the last, none */
   selectNext(): Placed | null {
@@ -356,14 +379,17 @@ export class ArtSystem {
     return { hit, u0, top, ok: !why, why }
   }
   /** every frame in hang mode: move the ghost and the guides */
-  update(): void {
+  update(dt = 0.016, sway = 0): void {
     const active = this.mode === 'hang' && this.walker.state.locked
+    if (this.handMesh) this.placeHand(1 - Math.exp(-dt / 0.09), sway)
     this.guideLines.visible = this.mode === 'hang' && this.layout.guides.show
     if (active) this.glow()
     if (!this.ghost || !this.held) { this.preview = { hit: null, u0: 0, top: 0, ok: false, why: '' }; return }
     if (this.held.kind === 'sculpture') { this.updateSculpt(active); return }
     const hit = active ? this.hitWall() : null
     if (this.handMesh) this.handMesh.visible = active && this.hands && !hit
+    const hitKey = hit ? hit.wall.id : null
+    if (hitKey !== this.lastHit) { this.lastHit = hitKey; if (hit) { this.feel?.snap(this.ghost); this.sfx?.('snap', hit.point) } }
     if (!hit) { this.ghost.visible = false; this.preview = { hit: null, u0: 0, top: 0, ok: false, why: '' }; return }
     const pv = this.plan(this.held, hit, this.walker.state.level)
     this.preview = pv
@@ -376,33 +402,49 @@ export class ArtSystem {
     if (!this.held) return this.pickup() ? 'picked' : 'nothing'
     const pv = this.preview
     if (this.held.kind === 'sculpture') {
-      if (!pv.floor || !pv.ok) return 'refused'
+      if (!pv.floor || !pv.ok) { if (this.ghost && pv.floor) { this.feel?.refuse(this.ghost, new THREE.Vector3(1, 0, 0)); this.sfx?.('nope', pv.floor.point) } return 'refused' }
       this.commit()
       const look = this.lookOf(this.held)
       const fp = pv.floor.point
-      this.layout.items.push({ id: `s-${Date.now().toString(36)}-${(this.seq++).toString(36)}`, art: this.held.id, kind: 'sculpture', wall: '', level: this.walker.state.level, u: 0, topY: 0, snap: null, pos: [fp.x, fp.y, fp.z], yaw: this.ghostYaw(), colour: look.colour, texture: look.texture, plinth: look.plinth })
-      this.rebuild(); this.autosave(); this.onChange?.()
+      const sid = `s-${Date.now().toString(36)}-${(this.seq++).toString(36)}`
+      this.layout.items.push({ id: sid, art: this.held.id, kind: 'sculpture', wall: '', level: this.walker.state.level, u: 0, topY: 0, snap: null, pos: [fp.x, fp.y, fp.z], yaw: this.ghostYaw(), colour: look.colour, texture: look.texture, plinth: look.plinth })
+      this.rebuild(); this.autosave()
+      const gm = this.meshes.get(sid); if (gm) this.feel?.land(gm); this.sfx?.('stone', fp)
+      this.hold(null)                                           // GAME.md §0 law 2: down means down
       return 'placed'
     }
-    if (!pv.hit || !pv.ok) return 'refused'
+    if (!pv.hit || !pv.ok) { if (this.ghost && pv.hit) { const [dx, dz] = wallDir(pv.hit.wall); this.feel?.refuse(this.ghost, new THREE.Vector3(dx, 0, dz)); this.sfx?.('nope', pv.hit.point) } return 'refused' }
     this.commit()
     const floorY = floorOf(this.lv, this.walker.state.level).floorY
     const g = this.layout.guides
-    this.layout.items.push({ id: `p-${Date.now().toString(36)}-${(this.seq++).toString(36)}`, art: this.held.id, kind: 'painting', wall: pv.hit.wall.id, level: this.walker.state.level, u: pv.u0, topY: pv.top - floorY, snap: g.snap === 'free' ? null : g.snap })
-    this.rebuild(); this.autosave(); this.onChange?.()
+    const pid = `p-${Date.now().toString(36)}-${(this.seq++).toString(36)}`
+    this.layout.items.push({ id: pid, art: this.held.id, kind: 'painting', wall: pv.hit.wall.id, level: this.walker.state.level, u: pv.u0, topY: pv.top - floorY, snap: g.snap === 'free' ? null : g.snap })
+    this.rebuild(); this.autosave()
+    const gm = this.meshes.get(pid); if (gm) this.feel?.land(gm); this.sfx?.('land', pv.hit.point)
+    this.hold(null)                                             // GAME.md §0 law 2: down means down
     return 'placed'
   }
   /** the placed work under the crosshair */
+  /** forgiving aim (GAME.md §1): the nearest placed work whose centre sits inside the cone, within reach, not behind a wall */
   lookedAt(): Placed | null {
-    const rc = new THREE.Raycaster(); const dir = new THREE.Vector3(); this.camera.getWorldDirection(dir)
-    rc.set(this.camera.position, dir); rc.far = ArtSystem.REACH
-    this.group.updateMatrixWorld(true)   // a work hung this frame has not been rendered yet
-    const hit = rc.intersectObjects(this.group.children, true)[0]
-    if (!hit) return null
-    const wallD = this.occluder?.(this.camera.position, dir, hit.distance)
-    if (wallD !== null && wallD !== undefined && wallD < hit.distance - 0.02) return null
-    let o: THREE.Object3D | null = hit.object; while (o && o.userData.placed === undefined) o = o.parent
-    return o ? this.layout.items.find((p) => p.id === o!.userData.placed) ?? null : null
+    const dir = new THREE.Vector3(); this.camera.getWorldDirection(dir)
+    const eye = this.camera.position
+    this.group.updateMatrixWorld(true)
+    let best: { p: Placed; ang: number } | null = null
+    const c = new THREE.Vector3(), to = new THREE.Vector3()
+    for (const [id, g] of this.meshes) {
+      const p = this.layout.items.find((x) => x.id === id); if (!p) continue
+      new THREE.Box3().setFromObject(g).getCenter(c)
+      to.copy(c).sub(eye); const d = to.length(); if (d > ArtSystem.REACH + 0.6) continue
+      to.divideScalar(d); const ang = Math.acos(THREE.MathUtils.clamp(to.dot(dir), -1, 1))
+      const a = this.library.find((x) => x.id === p.art); const half = a ? Math.max(a.w, a.h) / 200 : 0.3
+      const cone = ArtSystem.CONE + Math.atan2(half, Math.max(d, 0.3)) * 0.6      // a big work near you is easy to mean
+      if (ang > cone) continue
+      const wallD = this.occluder?.(eye, to, d)
+      if (wallD !== null && wallD !== undefined && wallD < d - 0.15) continue
+      if (!best || ang < best.ang) best = { p, ang }
+    }
+    return best?.p ?? null
   }
   pickup(): boolean {
     const p = this.target(); if (!p) return false
@@ -416,7 +458,17 @@ export class ArtSystem {
   remove(): boolean {
     const p = this.target(); if (!p) return false
     this.selected = null
-    this.commit(); this.layout.items = this.layout.items.filter((x) => x.id !== p.id); this.rebuild(); this.autosave(); this.onChange?.(); return true
+    this.commit(); this.layout.items = this.layout.items.filter((x) => x.id !== p.id)
+    const g = this.meshes.get(p.id)
+    if (g && this.feel) {
+      // the mesh flies toward your lower right and shrinks, then the layout rebuilds without it
+      this.meshes.delete(p.id); g.userData = {}
+      const toward = new THREE.Vector3(0.35, -0.3, -0.7).applyMatrix4(this.camera.matrixWorld)
+      this.sfx?.('whoosh', g.position)
+      this.feel.takeDown(g, toward, () => { this.group.remove(g); this.rebuild(); this.onChange?.() })
+      this.autosave(); this.onChange?.(); return true
+    }
+    this.rebuild(); this.autosave(); this.onChange?.(); return true
   }
   /** arrows: slide the looked-at work along its wall or up, in cm */
   nudge(du: number, dy: number): boolean {
@@ -473,11 +525,13 @@ export class ArtSystem {
   rotate(deg: number): boolean {
     if (this.held?.kind === 'sculpture') { this.heldYaw += THREE.MathUtils.degToRad(deg); return true }
     const p = this.target(); if (!p || p.kind !== 'sculpture') return false
-    this.commit(); p.yaw = (p.yaw ?? 0) + THREE.MathUtils.degToRad(deg); this.rebuild(); this.autosave(); this.onChange?.(); return true
+    this.commit(); p.yaw = (p.yaw ?? 0) + THREE.MathUtils.degToRad(deg); this.rebuild(); this.autosave()
+    const g = this.meshes.get(p.id); if (g && this.feel) { g.rotation.y = p.yaw - THREE.MathUtils.degToRad(deg); this.feel.turn(g, p.yaw) }
+    this.sfx?.('turn', g?.position); this.onChange?.(); return true
   }
   /** touch menu `swap`: the next library work of the same kind takes this spot (same wall, u, snap; same floor point, yaw) */
   swapInPlace(p: Placed, step: number): ArtItem | null {
-    const same = this.library.filter((a) => a.kind === p.kind); if (same.length < 2) return null
+    const same = this.library.filter((a) => a.kind === p.kind && (a.id === p.art || !this.isPlaced(a.id))); if (same.length < 2) return null
     const i = same.findIndex((a) => a.id === p.art); const next = same[((i + step) % same.length + same.length) % same.length]
     this.commit(); p.art = next.id
     if (p.kind === 'painting' && p.snap) p.topY = this.topFor(p.snap, next.h)

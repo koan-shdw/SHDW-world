@@ -225,3 +225,7 @@ input[type='color'] { width: 44px; height: 24px; padding: 0 2px; background: var
 .options table.keys td:first-child { color: var(--accent); white-space: nowrap; }
 .options .about { display: flex; flex-direction: column; gap: 6px; }
 .minimap { left: 16px; right: auto; width: 160px; height: 130px; border-radius: 8px; opacity: .6; }
+
+/* F1: originals */
+.hotbar .slot.placed { opacity: .45; filter: saturate(.4); cursor: default; }
+.hotbar .slot.placed .count { background: var(--muted); color: var(--bg0); }

@@ -8,49 +8,57 @@ const SPEED = 2.2, RUN = 4.2
 const LOOK = 0.0022
 
 export interface WalkState { level: string; x: number; z: number; feetY: number; yaw: number; pitch: number; onStair: string | null; locked: boolean }
+export type Footing = 'concrete' | 'checker' | 'wood' | 'gravel'
 
 export class Walker {
   readonly camera: THREE.PerspectiveCamera
   state: WalkState
   doors: DoorRuntime[] = []
-  private keys = new Set<string>()
+  keys: Set<string> = new Set()                        // fed by Input
   private lv: Level
   private dom: HTMLElement
   private smoothY: number
   onChange: ((s: WalkState) => void) | null = null
+  onStep: ((footing: Footing, running: boolean) => void) | null = null   // a footfall (GAME.md §1 footsteps)
+  onLevelStep: (() => void) | null = null                                 // the yard step, a stair top: a small dip
+  headBob = true
+  dip = { y: 0 }                                          // a one-shot camera dip, driven by Feel
+  private prev = { x: 0, z: 0, y: 0 }
+  private travelled = 0
+  private bobPhase = 0
+  private moving = false; private running = false
 
   constructor(lv: Level, camera: THREE.PerspectiveCamera, dom: HTMLElement) {
     this.lv = lv; this.camera = camera; this.dom = dom
     const sp = lv.spawn ?? { level: lv.levels[0].id, x: 0, z: 0, yawDeg: 0 }
     const y = floorOf(lv, sp.level).floorY
     this.state = { level: sp.level, x: sp.x, z: sp.z, feetY: y, yaw: THREE.MathUtils.degToRad(sp.yawDeg), pitch: 0, onStair: null, locked: false }
-    this.smoothY = y
-    dom.addEventListener('click', () => { if (!this.state.locked) dom.requestPointerLock() })
-    document.addEventListener('pointerlockchange', () => {
-      this.state.locked = document.pointerLockElement === dom
-      if (!this.state.locked) this.keys.clear()
-      this.onChange?.(this.state)
-    })
-    document.addEventListener('mousemove', (e) => {
-      if (!this.state.locked) return
-      this.state.yaw -= e.movementX * LOOK
-      this.state.pitch = THREE.MathUtils.clamp(this.state.pitch - e.movementY * LOOK, -1.45, 1.45)
-    })
-    window.addEventListener('keydown', (e) => { if (!isTyping(e)) this.keys.add(e.code) })
-    window.addEventListener('keyup', (e) => this.keys.delete(e.code))
-    window.addEventListener('blur', () => this.keys.clear())
-    this.applyCamera()
+    this.smoothY = y; this.prev = { x: sp.x, z: sp.z, y }
+    void LOOK
+    this.applyCamera(1)
   }
 
+  /** the mouse, raw, applied at once (GAME.md §1) */
+  look(dx: number, dy: number): void {
+    this.state.yaw -= dx
+    this.state.pitch = THREE.MathUtils.clamp(this.state.pitch - dy, -1.45, 1.45)
+    this.applyCamera(1)
+  }
+  setLocked(on: boolean): void { this.state.locked = on; if (!on) this.keys.clear(); this.onChange?.(this.state) }
   teleport(level: string, x: number, z: number): void {
     this.state.level = level; this.state.x = x; this.state.z = z; this.state.onStair = null
     this.state.feetY = floorOf(this.lv, level).floorY; this.smoothY = this.state.feetY
-    this.applyCamera(); this.onChange?.(this.state)
+    this.prev = { x, z, y: this.smoothY }
+    this.applyCamera(1); this.onChange?.(this.state)
   }
+  /** the fixed step (120 Hz): remember where we were, move, then the render frame blends between the two */
+  snapshot(): void { this.prev = { x: this.state.x, z: this.state.z, y: this.smoothY } }
 
   update(dt: number): void {
     dt = Math.min(dt, 0.05)   // a hitch must not turn into a 2 m step that skips the stair top
     const s = this.state
+    const before = { x: s.x, z: s.z, onStair: s.onStair, level: s.level }
+    this.moving = false
     if (s.locked) {
       let fwd = 0, side = 0
       if (this.keys.has('KeyW') || this.keys.has('ArrowUp')) fwd += 1
@@ -58,16 +66,37 @@ export class Walker {
       if (this.keys.has('KeyD') || this.keys.has('ArrowRight')) side += 1
       if (this.keys.has('KeyA') || this.keys.has('ArrowLeft')) side -= 1
       if (fwd || side) {
-        const speed = this.keys.has('ShiftLeft') || this.keys.has('ShiftRight') ? RUN : SPEED
+        this.running = this.keys.has('ShiftLeft') || this.keys.has('ShiftRight')
+        const speed = this.running ? RUN : SPEED
         const len = Math.hypot(fwd, side); fwd /= len; side /= len
         const dx = (-Math.sin(s.yaw) * fwd + Math.cos(s.yaw) * side) * speed * dt
         const dz = (-Math.cos(s.yaw) * fwd - Math.sin(s.yaw) * side) * speed * dt
         this.tryMove(dx, dz)
+        this.moving = true
       }
     }
     this.updateHeight()
+    if (before.level !== s.level || (before.onStair && !s.onStair)) this.onLevelStep?.()
     this.smoothY += (s.feetY - this.smoothY) * Math.min(1, dt * 14)
-    this.applyCamera()
+    // footfalls by distance: every 0.62 m walking, 0.8 m running
+    const moved = Math.hypot(s.x - before.x, s.z - before.z)
+    if (moved > 0) {
+      this.travelled += moved; this.bobPhase += moved * Math.PI / (this.running ? 0.8 : 0.62)
+      const stride = this.running ? 0.8 : 0.62
+      if (this.travelled >= stride) { this.travelled -= stride; this.onStep?.(this.footing(), this.running) }
+    }
+  }
+  /** what is under the feet: the stair treads, the yard, or the floor's material */
+  footing(): Footing {
+    const s = this.state
+    if (s.onStair) return 'checker'
+    for (const f of this.lv.floors) if (f.level === s.level && pointInPoly(s.x, s.z, f.poly)) {
+      const m = f.material ?? ''
+      if (m.includes('gravel') || m.includes('dirt') || m.includes('slate') || m.includes('path') || m.includes('tile')) return 'gravel'
+      if (m.includes('wood') || m.includes('ply')) return 'wood'
+      return 'concrete'
+    }
+    return 'concrete'
   }
 
   /** the nearest door with a leaf within reach, for the E key */
@@ -189,9 +218,12 @@ export class Walker {
     }
   }
 
-  private applyCamera(): void {
+  /** the camera between the last two fixed steps (alpha 0..1), with the head bob and the dip on top */
+  applyCamera(alpha = 1): void {
     const s = this.state
-    this.camera.position.set(s.x, this.smoothY + this.lv.eyeHeight, s.z)
+    const x = this.prev.x + (s.x - this.prev.x) * alpha, z = this.prev.z + (s.z - this.prev.z) * alpha, y = this.prev.y + (this.smoothY - this.prev.y) * alpha
+    const bob = this.headBob && this.moving && s.locked ? Math.sin(this.bobPhase) * (this.running ? 0.018 : 0.012) : 0
+    this.camera.position.set(x, y + this.lv.eyeHeight + bob + this.dip.y, z)
     this.camera.rotation.set(0, 0, 0, 'YXZ')
     this.camera.rotation.y = s.yaw
     this.camera.rotation.x = s.pitch
