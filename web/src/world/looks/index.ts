@@ -7,6 +7,7 @@ import type { Renderer } from '../renderer'
 import { EdgesPass } from './edges'
 import { makeLUTPass, loadCube } from './lut'
 import { Sky } from './sky'
+import { Void } from './void'
 import { Plants } from './plants'
 import { Glass } from './glass'
 import { Surface } from './surface'
@@ -20,6 +21,7 @@ export class Looks {
   readonly edges: EdgesPass
   readonly lutPass = makeLUTPass()
   readonly sky: Sky
+  readonly void: Void
   readonly plants: Plants
   readonly glass: Glass
   readonly surface: Surface
@@ -34,7 +36,8 @@ export class Looks {
     void loadCube(this.lutPass, `${data}textures/lut.cube`).then((ok) => { if (ok) bus.toast('lut.cube loaded · his grade') })
     // scene looks
     this.flatBackground = r.scene.background
-    this.sky = new Sky(fogColor); r.scene.add(this.sky.mesh)
+    this.sky = new Sky(fogColor); this.sky.mesh.visible = false
+    this.void = new Void(room); r.scene.add(this.void.group)         // owner 09-06: swirling black clouds under and over, with depth
     this.plants = new Plants(room); r.scene.add(this.plants.group)
     this.glass = new Glass(mat('glass'))
     this.surface = new Surface(Object.keys(MAPS).map((n) => mat(n)))
@@ -60,12 +63,12 @@ export class Looks {
     this.edges.uniforms.dither.value = s.dither ? 0.35 : 0
     this.edges.enabled = s.outline || s.dither
     this.r.smaa.enabled = s.smaa && this.r.quality !== 'low'
-    this.sky.mesh.visible = s.sky
+    this.void.set(s.sky)
     this.r.scene.background = s.sky ? null : this.flatBackground
     this.plants.set(s.plants)
     this.glass.set(s.glass)
     this.surface.set(s.surface)
   }
 
-  update(t: number): void { this.sky.update(t); this.plants.update(t) }
+  update(t: number): void { this.void.update(t); this.plants.update(t) }
 }

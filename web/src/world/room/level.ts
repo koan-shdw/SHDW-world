@@ -178,7 +178,7 @@ export const MAPS: Record<string, { file: string; tile: number }> = {
   'corrugated-ceiling': { file: 'corrugated-ceiling.jpg', tile: 1.0 }, 'plywood': { file: 'plywood.jpg', tile: 1.2 },
   'checker': { file: 'checker.jpg', tile: 0.6 }, 'dirt': { file: 'dirt.jpg', tile: 1.0 }, 'door-metal': { file: 'door-metal.jpg', tile: 1.0 },
   'door-slide': { file: 'door-metal.jpg', tile: 1.0 }, 'stringer-blue': { file: 'stringer-blue.jpg', tile: 0.8 },
-  'steel-black': { file: 'steel-black.jpg', tile: 0.5 }, 'render': { file: 'render.jpg', tile: 0.8 },
+  'steel-black': { file: 'steel-black.jpg', tile: 0.5 },
 }
 const texCache = new Map<string, THREE.Texture>()
 let texturesOn = false

@@ -14,6 +14,7 @@ import { Minimap } from './minimap'
 import { ArtSystem } from './art/art'
 import { Anchors } from './anchors'
 import { Looks } from './looks'
+import { Intro } from './intro'
 
 // three-mesh-bvh: the room's static geometry gets a BVH; raycasts against it are the accelerated kind
 THREE.BufferGeometry.prototype.computeBoundsTree = computeBoundsTree
@@ -62,6 +63,9 @@ export async function startWorld(container: HTMLElement, base: string): Promise<
   applyLook()
 
   const looks = new Looks(renderer, built.group, new THREE.Color(level.fog?.color ?? level.sky?.fallback ?? 0x232325), DATA)
+  const intro = new Intro(level, loader, base); scene.add(intro.group)
+  renderer.gl.shadowMap.enabled = true; renderer.gl.shadowMap.type = THREE.PCFSoftShadowMap   // one shadow: the plate on the red wall
+  built.group.traverse((o) => { const m = o as THREE.Mesh; if (m.isMesh) m.receiveShadow = true })
 
   // the room's BVH: one static mesh of every wall and floor, for occlusion queries (a work behind a wall is not looked at)
   built.group.updateMatrixWorld(true)
@@ -90,6 +94,7 @@ export async function startWorld(container: HTMLElement, base: string): Promise<
   // ---- walk, art -------------------------------------------------------------------------------------
   const walker = new Walker(level, camera, renderer.gl.domElement)
   walker.doors = built.doors
+  walker.teleport('ground', 6.18, 4.3); walker.state.yaw = THREE.MathUtils.degToRad(42.5); walker.applyCamera(1)   // owner 09-06: start on the far square of the yard, facing the door
   const input = new Input(renderer.gl.domElement)
   const feel = new Feel(); feel.reduce = input.settings.reduceMotion
   walker.keys = input.keys
@@ -333,6 +338,7 @@ export async function startWorld(container: HTMLElement, base: string): Promise<
     const walkKey = `${s.level}|${s.x.toFixed(2)}|${s.z.toFixed(2)}|${s.onStair}|${locked}`
     if (walkKey !== lastWalk) { lastWalk = walkKey; bus.emit('walk_state', { level: s.level, levelName: floorOf(level, s.level).name, x: s.x, z: s.z, onStair: !!s.onStair, locked }) }
     minimap?.draw(s)
+    intro.update(elapsed, s)
     // anchors: the wall widget rides the ghost; a touchable work carries its prompt
     anchors.set('hang-widget', locked && art.held?.kind === 'painting' && art.preview.hit ? art.preview.hit.point : null)
     if (lookAt && !touch) { const a = art.library.find((x) => x.id === lookAt.art); const pf = floorOf(level, lookAt.level).floorY; const w = level.walls.find((x) => x.id === lookAt.wall); if (a && w && lookAt.kind === 'painting') { const [dx, dz] = [w.b[0] - w.a[0], w.b[1] - w.a[1]]; const L = Math.hypot(dx, dz) || 1; const uc = lookAt.u + a.w / 200; anchors.set('work', new THREE.Vector3(w.a[0] + dx / L * uc, pf + lookAt.topY + 0.08, w.a[1] + dz / L * uc), 'touch') } else if (a && lookAt.pos) anchors.set('work', new THREE.Vector3(lookAt.pos[0], lookAt.pos[1] + a.h / 100 + (lookAt.plinth?.h ?? 0) / 100 + 0.1, lookAt.pos[2]), 'touch') }

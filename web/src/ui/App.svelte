@@ -35,9 +35,7 @@
   {#if ui.loader.active}
     <div class="loadbar" title={ui.loader.text}><i style="width:{ui.loader.total ? Math.round(100 * ui.loader.done / ui.loader.total) : 0}%"></i><span>{ui.loader.text}</span></div>
   {/if}
-  {#if ui.room && !ui.entered}
-    <div class="title"><img class="logo big" src="{base}brand/logo.png" alt="CULT 2026" /><div class="show">CULT by YOZO<small>presented by SHDW.gallery</small></div><div class="enter">press anywhere to enter</div></div>
-  {:else if ui.hud.hint === 'enter' && ui.room}
+  {#if ui.hud.hint === 'enter' && ui.room}
     <div class="hint">click to enter</div>
   {/if}
   <div class="crosshair" class:target={ui.hud.target} hidden={!ui.hud.cross}></div>
