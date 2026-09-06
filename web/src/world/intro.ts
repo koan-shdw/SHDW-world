@@ -57,8 +57,6 @@ export class Intro {
     const eye = floorY + 1.6
     const spawn = new THREE.Vector3(6.18, eye, 4.3)
     const faceTo = (m: THREE.Object3D, from: THREE.Vector3) => { const d = from.clone().sub(m.position); m.rotation.y = Math.atan2(d.x, d.z) }
-    const title = new Text3D(['by YOZO', 'presented by SHDW.gallery'], { width: 2.8, size: 0.17, align: 'center', shadow: 'rgba(0,0,0,.55)', lineHeight: 1.2 })
-    title.mesh.position.set(cx, top + 0.55, face + 0.5); faceTo(title.mesh, spawn)   // above the plate, in front of the hedge
     const controls = new Text3D(['w a s d   walk', 'mouse   look', 'click   hang', 'e   touch', 'esc   settings'], { width: 1.6, size: 0.13, shadow: 'rgba(0,0,0,.55)', lineHeight: 1.4 })
     controls.mesh.position.set(3.4, eye + 0.1, 1.0); faceTo(controls.mesh, spawn)
     // the word of god (owner 09-06): one giant block far opposite the door, taking the whole sky, light moving across it
@@ -68,10 +66,9 @@ export class Intro {
     const essay = new Text3D(ESSAY, { width: 200, size: 4.4, shadow: 'rgba(0,0,0,.5)', lineHeight: 1.22, weight: 700, sheen: true })
     essay.mesh.position.set(150, eye + 74 - quote.height / 2 - essay.height / 2 - 4, 1.0); essay.mesh.rotation.y = -Math.PI / 2
     quote.opacity = 1; essay.opacity = 1
-    for (const t of [title, controls, quote, essay]) this.group.add(t.mesh)
+    for (const t of [controls, quote, essay]) this.group.add(t.mesh)   // the 'by YOZO' line is dropped (owner 09-06): he will say how it goes
     this.sheen = [quote, essay]
     this.blocks = [
-      { text: title, measure: 'point', at: new THREE.Vector3(cx, 0, face), far: 8.5, near: 4.2, gone: 1.3, typed: false },
       { text: controls, measure: 'point', at: controls.mesh.position.clone(), far: 4.8, near: 2.8, gone: 1.0, typed: false },
     ]
   }
