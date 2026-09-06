@@ -36,7 +36,7 @@
     <div class="loadbar" title={ui.loader.text}><i style="width:{ui.loader.total ? Math.round(100 * ui.loader.done / ui.loader.total) : 0}%"></i><span>{ui.loader.text}</span></div>
   {/if}
   {#if ui.room && !ui.entered}
-    <div class="title"><div class="mark big">SHDW<b>.world</b></div><div class="enter">press anywhere to enter</div></div>
+    <div class="title"><img class="logo big" src="{base}brand/logo.png" alt="CULT 2026" /><div class="show">CULT by YOZO<small>presented by SHDW.gallery</small></div><div class="enter">press anywhere to enter</div></div>
   {:else if ui.hud.hint === 'enter' && ui.room}
     <div class="hint">click to enter</div>
   {/if}
@@ -49,7 +49,7 @@
   <WallWidget />
 </div>
 
-<div class="mark top">SHDW<b>.world</b></div>
+<img class="logo top" src="{base}brand/logo.png" alt="CULT 2026" />
 
 <div class="bottom" class:dim={!ui.hud.cross}>
   <AddPanel bind:this={add} />
@@ -64,5 +64,5 @@
   {#each ui.toasts as t (t.id)}<div class="toast {t.kind}">{t.msg}</div>{/each}
 </div>
 
-{#if ui.menuShown}<Options />{/if}
+{#if ui.menuShown}<Options {base} />{/if}
 {#if ui.debugShown}<Debug />{/if}

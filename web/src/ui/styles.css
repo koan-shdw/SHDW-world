@@ -184,3 +184,13 @@ input[type='color'] { width: 44px; height: 30px; padding: 0 2px; background: var
 .viewport .widget .wrow .k { font-size: 12px; color: var(--muted); }
 .viewport .widget .wrow .v { font-size: 15px; font-weight: 800; color: var(--txt-hi); }
 .viewport .widget .wrow.lit { background: var(--warn); }
+
+/* the show's logo (owner 09-06): CULT 2026, a photo of the etched plate */
+.logo { display: block; border-radius: 8px; }
+.logo.top { position: absolute; left: 18px; top: 14px; height: 34px; width: auto; z-index: 20; pointer-events: none; box-shadow: var(--shadow-sm); }
+.viewport .title .logo.big { width: min(420px, 70vw); height: auto; border-radius: 12px; box-shadow: var(--shadow); animation: pop .5s var(--e-back); }
+.viewport .title .show { font-size: 20px; font-weight: 800; color: var(--txt-hi); text-align: center; text-transform: none; }
+.viewport .title .show small { display: block; font-size: 13px; color: var(--muted); font-weight: 700; margin-top: 2px; }
+.options .head { display: flex; align-items: center; gap: 14px; padding: 12px 18px; border-bottom: var(--ink); }
+.options .head .logo { height: 40px; width: auto; }
+.options .head .show { font-size: 13px; color: var(--muted); text-transform: none; }

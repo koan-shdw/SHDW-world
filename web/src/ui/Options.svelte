@@ -3,6 +3,7 @@
   import Row from './Row.svelte'
   import { bus } from '../bus'
   import { ui } from './state.svelte'
+  let { base }: { base: string } = $props()
   const tabs = ['controls', 'file', 'keys']
   let eye = $state(160)
   $effect(() => { if (ui.room) eye = ui.room.eyeCm })
@@ -23,7 +24,7 @@
 
 <div class="options" role="dialog" aria-label="settings">
   <div class="panel">
-    <div class="mark">SHDW<b>.world</b></div>
+    <div class="head"><img class="logo" src="{base}brand/logo.png" alt="CULT 2026" /><span class="show">CULT by YOZO · presented by SHDW.gallery</span></div>
     <div class="body">
       <div class="tabs">
         {#each tabs as t (t)}<button class="tab" class:on={ui.menuTab === t} onclick={() => (ui.menuTab = t)}>{t}</button>{/each}
@@ -33,7 +34,7 @@
       <div class="content">
         {#if ui.menuTab === 'controls' && ui.play}
           <Row label="mouse"><input type="range" min="0.3" max="3" step="0.05" value={ui.play.sensitivity} oninput={(e) => bus.emit('set_play', { patch: { sensitivity: num(e) } })} /></Row>
-          <Row label="field of view"><input type="range" min="60" max="100" step="1" value={ui.play.fov} oninput={(e) => bus.emit('set_play', { patch: { fov: num(e) } })} /></Row>
+          <Row label="view"><input type="range" min="60" max="100" step="1" value={ui.play.fov} oninput={(e) => bus.emit('set_play', { patch: { fov: num(e) } })} /></Row>
           <Row label="eye height cm"><input type="number" min="100" max="220" step="1" bind:value={eye} onchange={() => bus.emit('set_eye', { cm: Number(eye) })} /></Row>
           <Row label="head bob"><input type="checkbox" checked={ui.play.headBob} onchange={(e) => bus.emit('set_play', { patch: { headBob: (e.currentTarget as HTMLInputElement).checked } })} /></Row>
           <Row label="reduce motion"><input type="checkbox" checked={ui.play.reduceMotion} onchange={(e) => bus.emit('set_play', { patch: { reduceMotion: (e.currentTarget as HTMLInputElement).checked } })} /></Row>
