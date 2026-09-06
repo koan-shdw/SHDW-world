@@ -11,7 +11,7 @@ export interface PlaySettings { sensitivity: number; fov: number; reduceMotion: 
 export interface SoundSettings { master: number; ui: number; world: number; muted: boolean }
 
 export interface WalkSnapshot { level: string; levelName: string; x: number; z: number; onStair: boolean; locked: boolean }
-export interface HudSnapshot { hint: 'play' | null; cross: boolean; doorTip: string | null; hangTip: string | null }
+export interface HudSnapshot { hint: 'play' | null; cross: boolean; doorTip: string | null; hangTip: string | null; target: boolean }
 export type TouchAction = 'move' | 'down' | 'swap' | 'swapback' | 'turn' | 'turnback' | 'done' | 'alignWall' | 'alignAll'
 export interface TouchSnapshot { placed: string; kind: Kind; title: string; size: string }
 export interface Focus { art: string; placed: string | null; look: SculptLook }
@@ -31,6 +31,8 @@ export interface Events {
   play: { settings: PlaySettings }
   sound: { settings: SoundSettings }
   sfx: { name: string; at?: [number, number, number]; pitch?: number }
+  ring_aim: { x: number; y: number }            // the ring's aim vector, from mouse deltas or the right stick
+  ring_confirm: Record<string, never>            // click / A while the ring is open: do the hot slice
   touch: { touch: TouchSnapshot | null }
   look: { look: Look }
   fx: { state: FxState }

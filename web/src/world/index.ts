@@ -201,8 +201,8 @@ export async function startWorld(container: HTMLElement, base: string): Promise<
   const openMenu = (tab?: string) => { if (menuOpen) return; menuOpen = true; closeTouch(); input.release(); sfx('menu-open'); bus.emit('menu', { show: true, tab }) }
   const closeMenu = () => { if (!menuOpen) return; menuOpen = false; sfx('menu-close'); bus.emit('menu', { show: false }); void input.lock() }
   const touchSnap = (p: Placed) => { const a = art.library.find((x) => x.id === p.art); return { placed: p.id, kind: p.kind, title: a?.title ?? 'work', size: a ? `${a.w} × ${a.h} × ${a.d} cm` : '' } }
-  const openTouch = (p: Placed) => { touch = p; art.selected = p.id; artSnapshot(); sfx('open'); bus.emit('touch', { touch: touchSnap(p) }) }
-  const closeTouch = () => { if (!touch) return; touch = null; art.selected = null; anchors.set('touch', null); artSnapshot(); sfx('close'); bus.emit('touch', { touch: null }) }
+  const openTouch = (p: Placed) => { touch = p; art.selected = p.id; artSnapshot(); sfx('open'); bus.emit('touch', { touch: touchSnap(p) }); const sz = renderer.size; input.openRing(sz.x / 2, sz.y / 2) }
+  const closeTouch = () => { if (!touch) return; touch = null; art.selected = null; anchors.set('touch', null); artSnapshot(); sfx('close'); input.closeRing(); bus.emit('touch', { touch: null }) }
   const touchAction = (action: TouchAction) => {
     const p = touch; if (!p) return
     switch (action) {
@@ -228,7 +228,8 @@ export async function startWorld(container: HTMLElement, base: string): Promise<
       case 'debug': bus.emit('debug_toggle', {}); break
       case 'undo': case 'redo': closeTouch(); bus.toast((verb === 'redo' ? art.doRedo() : art.doUndo()) ? verb : 'nothing to undo'); sfx('click'); break
       case 'do': {
-        if (touch) return
+        if (touch) { bus.emit('ring_confirm', {}); return }
+        if (!art.held) { const t = art.target(); if (t) { openTouch(t); return } }
         const r = art.place()
         if (r === 'placed') bus.toast('down · walk up to it and press e to touch it')
         else if (r === 'refused') bus.toast(art.preview.why || (art.held?.kind === 'sculpture' ? 'look at the floor' : 'look at a hang wall'), 'warn')
@@ -276,6 +277,7 @@ export async function startWorld(container: HTMLElement, base: string): Promise<
   renderer.start((dt) => {
     elapsed += dt; looks.update(elapsed)
     // fixed step (GAME.md §1): the walker moves in 1/120 s steps, the camera blends between the last two
+    input.pollPad(dt)
     acc += Math.min(dt, 0.1); let steps = 0
     while (acc >= STEP && steps < 12) { walker.snapshot(); walker.update(STEP); acc -= STEP; steps++ }
     walker.applyCamera(Math.min(1, acc / STEP))
@@ -312,8 +314,9 @@ export async function startWorld(container: HTMLElement, base: string): Promise<
     }
     const near = locked ? walker.nearestDoor() : null
     const doorTip = near ? (near.opening.door?.toggle ? (near.open ? 'e · close door' : 'e · open door') : 'door · closed') : null
-    const hudKey = `${locked}|${menuOpen}|${hangTip}|${doorTip}`
-    if (hudKey !== lastHud) { lastHud = hudKey; bus.emit('hud', { hint: locked || menuOpen || bigShown ? null : 'play', cross: locked, doorTip, hangTip }) }
+    const target = !!lookAt && !touch
+    const hudKey = `${locked}|${menuOpen}|${hangTip}|${doorTip}|${target}`
+    if (hudKey !== lastHud) { lastHud = hudKey; bus.emit('hud', { hint: locked || menuOpen || bigShown ? null : 'play', cross: locked, doorTip, hangTip, target }) }
     const fNow = locked ? art.focus() : null; const fKey = fNow ? `${fNow.art.id}|${fNow.placed?.id ?? ''}` : ''
     if (fKey !== lastFocus) { lastFocus = fKey; artSnapshot() }
     const walkKey = `${s.level}|${s.x.toFixed(2)}|${s.z.toFixed(2)}|${s.onStair}|${locked}`

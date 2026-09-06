@@ -10,6 +10,18 @@ export const THEME_VARS = [
 ] as const
 
 export const PRESET_THEMES: Record<string, ThemeMap> = {
+  // PLAY (GAME.md §2): Messenger's palette pushed to DokeV's sun. Light, chunky, ink outlines. The game's default.
+  PLAY: {
+    '--bg0': '#F8F8F8', '--bg': '#EEF4F7', '--bg2': '#E2ECF2',
+    '--panel': '#FFFFFF', '--panel2': '#F1F6F9', '--field': '#FFFFFF',
+    '--header': '#F8F8F8',
+    '--line': '#0f0f0f', '--line2': '#0f0f0f',
+    '--txt-hi': '#0f0f0f', '--txt': '#1c2429', '--body': '#2c3a44',
+    '--muted': '#647A87', '--dim': '#93A6B1',
+    '--accent': '#66BDE6', '--accent-dim': '#3f9fcf', '--accent-soft': '#afe7eb',
+    '--on-accent': '#0f0f0f',
+    '--ok': '#8cc48c', '--warn': '#f3c258', '--bad': '#c25959', '--focus': '#66BDE6',
+  },
   DECK: {
     '--bg0': '#050807', '--bg': '#070a08', '--bg2': '#0c120e',
     '--panel': '#101713', '--panel2': '#16201a', '--field': '#08100b',
@@ -45,8 +57,8 @@ export const PRESET_THEMES: Record<string, ThemeMap> = {
   },
 }
 
-export const DEFAULT_THEME = 'DECK'
-const KEY = 'koan-hang-theme'
+export const DEFAULT_THEME = 'PLAY'
+const KEY = 'shdw-world-theme'   // a new key: everyone starts on PLAY
 
 export function currentTheme(): string {
   try { return localStorage.getItem(KEY) ?? DEFAULT_THEME } catch { return DEFAULT_THEME }

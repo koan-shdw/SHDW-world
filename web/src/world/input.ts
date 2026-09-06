@@ -20,13 +20,22 @@ export class Input {
   onArrow: ((du: number, dy: number, e: KeyboardEvent) => void) | null = null
   onWheel: ((step: number) => void) | null = null
   onLockChange: ((locked: boolean) => void) | null = null
+  /** while a ring is open the mouse aims it instead of the camera */
+  ringOpen = false
+  private ringVec = { x: 0, y: 0 }
+  private padPrev = new Map<number, boolean>()
+  padActive = false
   static BASE_LOOK = 0.0022
   static BUFFER_MS = 120
 
   constructor(private dom: HTMLElement) {
     try { const s = localStorage.getItem(PLAY_KEY); if (s) Object.assign(this.settings, JSON.parse(s)) } catch { /* private */ }
     document.addEventListener('pointerlockchange', () => { this.locked = document.pointerLockElement === dom; if (!this.locked) this.keys.clear(); this.onLockChange?.(this.locked) })
-    document.addEventListener('mousemove', (e) => { if (this.locked) this.onLook?.(e.movementX * Input.BASE_LOOK * this.settings.sensitivity, e.movementY * Input.BASE_LOOK * this.settings.sensitivity) })
+    document.addEventListener('mousemove', (e) => {
+      if (!this.locked) { if (this.ringOpen) this.aimAbs(e.clientX, e.clientY); return }
+      if (this.ringOpen) { this.ringVec.x = Math.max(-140, Math.min(140, this.ringVec.x + e.movementX)); this.ringVec.y = Math.max(-140, Math.min(140, this.ringVec.y + e.movementY)); bus.emit('ring_aim', { x: this.ringVec.x, y: this.ringVec.y }); return }
+      this.onLook?.(e.movementX * Input.BASE_LOOK * this.settings.sensitivity, e.movementY * Input.BASE_LOOK * this.settings.sensitivity)
+    })
     document.addEventListener('contextmenu', (e) => { e.preventDefault() })            // the game owns the right button
     dom.addEventListener('mousedown', (e) => {
       if (!this.locked) { if (e.button === 0) void this.lock(); return }
@@ -65,6 +74,25 @@ export class Input {
         if (/^Digit[0-9]$/.test(e.code)) { const n = Number(e.code.slice(5)); this.onSlot?.(n === 0 ? 9 : n - 1) }
         else if (e.key === '?') this.onVerb?.('keys', e)
     }
+  }
+
+  ringCentre = { x: 0, y: 0 }
+  openRing(cx: number, cy: number): void { this.ringOpen = true; this.ringVec = { x: 0, y: 0 }; this.ringCentre = { x: cx, y: cy }; bus.emit('ring_aim', { x: 0, y: 0 }) }
+  closeRing(): void { this.ringOpen = false }
+  private aimAbs(x: number, y: number): void { bus.emit('ring_aim', { x: x - this.ringCentre.x, y: y - this.ringCentre.y }) }
+
+  /** the pad (GAME.md: controller ready): left stick walks, right stick looks or aims the ring, A do, B put back, X touch, Y turn, bumpers cycle, start menu, back map */
+  pollPad(dt: number): void {
+    const pads = navigator.getGamepads ? navigator.getGamepads() : []
+    const pad = Array.from(pads).find((p) => p && p.connected); if (!pad) { this.padActive = false; return }
+    const dz = (v: number) => (Math.abs(v) < 0.18 ? 0 : v)
+    const lx = dz(pad.axes[0] ?? 0), ly = dz(pad.axes[1] ?? 0), rx = dz(pad.axes[2] ?? 0), ry = dz(pad.axes[3] ?? 0)
+    const walk = (code: string, on: boolean) => { if (on) this.keys.add(code); else this.keys.delete(code) }
+    walk('KeyW', ly < -0.3); walk('KeyS', ly > 0.3); walk('KeyA', lx < -0.3); walk('KeyD', lx > 0.3); walk('ShiftLeft', !!pad.buttons[10]?.pressed)
+    if (this.ringOpen) { if (Math.hypot(rx, ry) > 0.3) bus.emit('ring_aim', { x: rx * 120, y: ry * 120 }) }
+    else if (rx || ry) this.onLook?.(rx * 2.4 * dt * this.settings.sensitivity, ry * 2.0 * dt * this.settings.sensitivity)
+    const edge = (i: number, verb: Verb) => { const now = !!pad.buttons[i]?.pressed; const was = this.padPrev.get(i) ?? false; this.padPrev.set(i, now); if (now && !was) { this.padActive = true; this.onVerb?.(verb, new MouseEvent('mousedown')) } }
+    edge(0, 'do'); edge(1, 'putback'); edge(2, 'touch'); edge(3, 'turn'); edge(4, 'cyclePrev'); edge(5, 'cycleNext'); edge(9, 'menu'); edge(8, 'map')
   }
 
   /** raw movement when the browser has it (Chromium, Windows/macOS), plain lock otherwise. Needs a user gesture */

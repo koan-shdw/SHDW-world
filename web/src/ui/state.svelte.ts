@@ -10,7 +10,7 @@ export const ui = $state({
   room: null as RoomInfo | null,
   failed: null as string | null,
   walk: null as WalkSnapshot | null,
-  hud: { hint: 'play', cross: false, doorTip: null, hangTip: null } as HudSnapshot,
+  hud: { hint: 'play', cross: false, doorTip: null, hangTip: null, target: false } as HudSnapshot,
   art: null as ArtSnapshot | null,
   loader: { active: false, done: 0, total: 0, text: '' } as LoaderState,
   mapShown: false,
@@ -22,6 +22,10 @@ export const ui = $state({
   debugShown: false,
   toasts: [] as Toast[],
   anchors: {} as Record<string, { x: number; y: number; visible: boolean; text?: string }>,
+  ringAim: null as { x: number; y: number } | null,
+  ringHot: null as string | null,
+  lookOpen: false,
+  entered: false,
 })
 
 let toastSeq = 0
@@ -36,7 +40,8 @@ bus.on('art_state', (a) => { ui.art = a })
 bus.on('loader', (l) => { ui.loader = l })
 bus.on('map_show', ({ show }) => { ui.mapShown = show })
 bus.on('menu', ({ show, tab }) => { ui.menuShown = show; if (tab) ui.menuTab = tab })
-bus.on('touch', ({ touch }) => { ui.touch = touch })
+bus.on('touch', ({ touch }) => { ui.touch = touch; ui.ringAim = null; ui.ringHot = null; if (!touch) ui.lookOpen = false })
+bus.on('ring_aim', (a) => { ui.ringAim = a })
 bus.on('play', ({ settings }) => { ui.play = settings })
 bus.on('sound', ({ settings }) => { ui.sound = settings })
 bus.on('debug_toggle', () => { ui.debugShown = !ui.debugShown })

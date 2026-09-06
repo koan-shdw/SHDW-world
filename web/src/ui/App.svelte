@@ -7,6 +7,7 @@
   import Hotbar from './Hotbar.svelte'
   import Hands from './Hands.svelte'
   import TouchMenu from './TouchMenu.svelte'
+  import Ring from './Ring.svelte'
   import WallWidget from './WallWidget.svelte'
   import Options from './Options.svelte'
   import AddPanel from './AddPanel.svelte'
@@ -24,6 +25,7 @@
   // every button: hover and press sounds (GAME.md §1), one delegated listener
   const uiHover = (e: MouseEvent) => { const t = (e.target as HTMLElement).closest?.('button'); if (t && !t.disabled) bus.emit('sfx', { name: 'hover' }) }
   const uiClick = (e: MouseEvent) => { const t = (e.target as HTMLElement).closest?.('button, input[type=checkbox]'); if (t) bus.emit('sfx', { name: 'click' }) }
+  $effect(() => { if (ui.hud.cross) ui.entered = true })
   const mapClick = (e: MouseEvent) => { const r = big.getBoundingClientRect(); bus.emit('map_click', { px: e.clientX - r.left, py: e.clientY - r.top }) }
 </script>
 
@@ -36,11 +38,16 @@
   {#if ui.loader.active}
     <div class="loadbar" title={ui.loader.text}><i style="width:{ui.loader.total ? Math.round(100 * ui.loader.done / ui.loader.total) : 0}%"></i><span>{ui.loader.text}</span></div>
   {/if}
-  <div class="hint" hidden={ui.hud.hint !== 'play' || !ui.room}>click to play<small>w a s d walk · mouse look · e touch · esc menu</small></div>
-  <div class="crosshair" hidden={!ui.hud.cross}></div>
+  {#if ui.room && !ui.entered}
+    <div class="title"><div class="mark big">SHDW<b>.world</b></div><div class="enter">press anywhere to enter</div><div class="keys">w a s d walk · mouse look · click hang · e touch · esc menu</div></div>
+  {:else if ui.hud.hint === 'play' && ui.room}
+    <div class="hint">click to play<small>w a s d walk · mouse look · click hang · e touch · esc menu</small></div>
+  {/if}
+  <div class="crosshair" class:target={ui.hud.target} hidden={!ui.hud.cross}></div>
   <div class="doortip" hidden={!ui.hud.doorTip}>{ui.hud.doorTip}</div>
   <div class="hangtip" hidden={!ui.hud.hangTip}>{ui.hud.hangTip}</div>
   {#if ui.anchors['work']?.visible && !ui.touch}<div class="worklabel" style="left:{ui.anchors['work'].x}px; top:{ui.anchors['work'].y}px">{ui.anchors['work'].text}</div>{/if}
+  <Ring />
   <TouchMenu />
   <WallWidget />
 </div>
