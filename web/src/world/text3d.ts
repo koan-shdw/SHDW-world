@@ -10,6 +10,7 @@ export class Text3D {
   private tex: THREE.CanvasTexture
   private mat: THREE.MeshBasicMaterial
   private time = { value: 0 }
+  private flash = { value: 0 }
   private lastKey = ''
   readonly height: number
   private ppm = 384                                      // canvas pixels per metre, capped for giant blocks
@@ -26,15 +27,15 @@ export class Text3D {
     if (opts.sheen) {
       // light moving across the letters: two slow bands and a slow breath, on the colour, alpha untouched
       this.mat.onBeforeCompile = (sh) => {
-        sh.uniforms.uTime = this.time
+        sh.uniforms.uTime = this.time; sh.uniforms.uFlash = this.flash
         sh.fragmentShader = sh.fragmentShader
           .replace('#include <common>', `#include <common>
-uniform float uTime;`)
+uniform float uTime; uniform float uFlash;`)
           .replace('#include <map_fragment>', `#include <map_fragment>
             float b1 = 0.55 + 0.45 * sin(vMapUv.x * 5.0 - uTime * 0.35 + vMapUv.y * 2.0);
             float b2 = 0.6 + 0.4 * sin(vMapUv.y * 9.0 + uTime * 0.21 - vMapUv.x * 3.0);
             float breath = 0.85 + 0.15 * sin(uTime * 0.6);
-            diffuseColor.rgb *= (0.7 + 0.5 * b1 * b2) * breath * 1.25;`)
+            diffuseColor.rgb *= (0.7 + 0.5 * b1 * b2) * breath * 1.25 * (1.0 + uFlash * 2.2);`)
       }
     }
     this.mesh = new THREE.Mesh(new THREE.PlaneGeometry(opts.width, this.height), this.mat)
@@ -90,7 +91,7 @@ uniform float uTime;`)
     }
     this.tex.needsUpdate = true
   }
-  update(t: number): void { this.time.value = t }
+  update(t: number, flash = 0): void { this.time.value = t; this.flash.value = flash }
   set opacity(v: number) { this.mat.opacity = v; this.mesh.visible = v > 0.005 }
   get opacity(): number { return this.mat.opacity }
 }

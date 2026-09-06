@@ -6,6 +6,7 @@ import * as THREE from 'three'
 const vert = /* glsl */ `varying vec3 vW; void main() { vec4 w = modelMatrix * vec4(position, 1.0); vW = w.xyz; gl_Position = projectionMatrix * viewMatrix * w; }`
 const frag = /* glsl */ `
 uniform float time; uniform vec3 base; uniform vec3 lift; uniform vec3 glowAt; uniform float glowR; uniform float scale; uniform float drift; uniform float alpha; uniform float solid;
+uniform float flash; uniform vec3 flashAt; uniform float flashR;
 varying vec3 vW;
 float hash(vec2 p) { return fract(sin(dot(p, vec2(127.1, 311.7))) * 43758.5453); }
 float noise(vec2 p) { vec2 i = floor(p), f = fract(p); f = f * f * (3.0 - 2.0 * f);
@@ -21,6 +22,9 @@ void main() {
   vec3 col = mix(base, lift, cloud * 0.6);
   float g = 1.0 - smoothstep(0.0, glowR, length(vW.xz - glowAt.xz));
   col += vec3(0.12, 0.09, 0.07) * g * (0.3 + 0.7 * cloud);
+  // lightning: a bright core in the cloud, a wide wash across everything
+  float fl = flash * (0.05 + 0.95 * (1.0 - smoothstep(0.0, flashR, length(vW - flashAt))));
+  col += vec3(0.5, 0.52, 0.62) * fl * (0.25 + 0.75 * cloud);
   // a sheet: smoke where the noise is, clear between; the dome and the deep floor are solid
   float a = mix(cloud * alpha, 1.0, solid);
   gl_FragColor = vec4(col, a);
@@ -31,6 +35,7 @@ function smoke(scale: number, drift: number, alpha: number, solid: number): THRE
     uniforms: {
       time: { value: 0 }, base: { value: new THREE.Color(0x07070a) }, lift: { value: new THREE.Color(0x2c2e36) },
       glowAt: { value: new THREE.Vector3(-2.5, 0, 0) }, glowR: { value: 20 }, scale: { value: scale }, drift: { value: drift }, alpha: { value: alpha }, solid: { value: solid },
+      flash: { value: 0 }, flashAt: { value: new THREE.Vector3(60, 40, 0) }, flashR: { value: 45 },
     },
     vertexShader: vert, fragmentShader: frag, side: THREE.DoubleSide, fog: false, transparent: solid < 1, depthWrite: false,
   })
@@ -58,9 +63,36 @@ export class Void {
       const m = smoke(sc, 7 + i * 1.7, al, 0); this.materials.push(m)
       const s = new THREE.Mesh(new THREE.CircleGeometry(radius, 40), m); s.rotation.x = -Math.PI / 2; s.position.y = floorY + dy; s.renderOrder = -8 + i; this.group.add(s)
     })
+    // mist between you and the far words (owner 09-07): two tall sheets across the way, in the world so they drift past the words
+    ;[[38, 0.05, 0.4], [82, 0.035, 0.55]].forEach(([x, sc, al], i) => {
+      const m = smoke(sc, 11 + i * 3.1, al, 0); this.materials.push(m)
+      const s = new THREE.Mesh(new THREE.PlaneGeometry(320, 160), m); s.position.set(x, floorY + 50, 0); s.rotation.y = -Math.PI / 2; s.renderOrder = -6 + i; this.group.add(s)
+    })
     // the old flat void disc goes: the smoke is the void now
     room.traverse((o) => { const m = o as THREE.Mesh; if (m.isMesh && m.userData.kind === 'ground') m.visible = false })
   }
-  update(t: number): void { for (const m of this.materials) m.uniforms.time.value = t }
+  // lightning: a strike every 6 to 14 s at a random spot in the clouds, 200 to 400 ms, sometimes a second strike right after
+  flash = 0
+  private nextStrike = 4
+  private strikeT = -1
+  private strikeLen = 0.3
+  private second = false
+  private at = new THREE.Vector3()
+  update(t: number): void {
+    if (t >= this.nextStrike && this.strikeT < 0) {
+      this.strikeT = t; this.strikeLen = 0.2 + Math.random() * 0.2; this.second = Math.random() < 0.35
+      this.at.set(20 + Math.random() * 120, 20 + Math.random() * 50, -80 + Math.random() * 160)
+      this.nextStrike = t + 6 + Math.random() * 8
+    }
+    let f = 0
+    if (this.strikeT >= 0) {
+      const e = (t - this.strikeT) / this.strikeLen
+      f = e < 1 ? Math.pow(1 - e, 1.6) * (e < 0.08 ? e / 0.08 : 1) : 0
+      if (this.second && e > 0.45 && e < 0.75) f = Math.max(f, Math.pow(1 - (e - 0.45) / 0.3, 1.4) * 0.8)
+      if (e >= 1) this.strikeT = -1
+    }
+    this.flash = f
+    for (const m of this.materials) { m.uniforms.time.value = t; m.uniforms.flash.value = f; (m.uniforms.flashAt.value as THREE.Vector3).copy(this.at) }
+  }
   set(on: boolean): void { this.group.visible = on }
 }
