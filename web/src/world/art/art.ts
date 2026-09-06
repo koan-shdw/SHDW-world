@@ -51,7 +51,7 @@ export class ArtSystem {
   held: ArtItem | null = null
   selected: string | null = null                 // a hung work picked with Tab: glows, takes delete / arrows / e
   hands = true                                    // the held work shows in your hands until a wall takes it (H toggles)
-  static REACH = 3.0                              // metres: only works this close can be grabbed
+  static REACH = 1.8                              // metres: walk up to it (owner 09-06: touch only when closer)
   mode: 'walk' | 'hang' | 'level' = 'walk'
   preview: Preview = { hit: null, u0: 0, top: 0, ok: false, why: '' }
   onChange: (() => void) | null = null          // library or layout changed: cards redraw
@@ -381,7 +381,7 @@ export class ArtSystem {
   update(dt = 0.016, sway = 0): void {
     const active = this.mode === 'hang' && this.walker.state.locked
     if (this.handMesh) this.placeHand(1 - Math.exp(-dt / 0.09), sway)
-    this.guideLines.visible = this.mode === 'hang' && this.layout.guides.show
+    this.guideLines.visible = this.held?.kind === 'painting' && this.walker.state.locked && this.layout.guides.show
     if (active) this.glow()
     if (!this.ghost || !this.held) { this.preview = { hit: null, u0: 0, top: 0, ok: false, why: '' }; return }
     if (this.held.kind === 'sculpture') { this.updateSculpt(active); return }
@@ -555,7 +555,7 @@ export class ArtSystem {
     const hcm = this.held?.h ?? 0
     const y = floorOf(this.lv, this.walker.state.level).floorY + (g.snap === 'top' ? g.top / 100 : g.snap === 'centre' ? g.centre / 100 : g.bottom / 100)
     void hcm
-    const mat = new THREE.LineDashedMaterial({ color: 0x00ff9f, dashSize: 0.08, gapSize: 0.06, transparent: true, opacity: 0.8 })
+    const mat = new THREE.LineDashedMaterial({ color: 0x66bde6, dashSize: 0.06, gapSize: 0.05, transparent: true, opacity: 0.55 })
     for (const w of this.hangWalls()) {
       if (y < w.baseY || y > w.topY) continue
       const pts = [wallPoint(w, 0.02, y, 0.005), wallPoint(w, wallLength(w) - 0.02, y, 0.005)]

@@ -1,15 +1,19 @@
 <script lang="ts">
-  // Tweakpane debug panel (REMAKE.md §2): off by default, backtick opens it. Never part of the shipped look.
+  // Debug panel (backtick): looks, quality, room look, fps. Never part of the shipped screen.
   import { onMount } from 'svelte'
   import { Pane } from 'tweakpane'
+  import { bus, type FxKey, type Look, type Quality } from '../bus'
   import { ui } from './state.svelte'
   let host: HTMLElement
   onMount(() => {
-    const pane = new Pane({ container: host, title: 'KOAN.hang · debug' })
+    const pane = new Pane({ container: host, title: 'SHDW.world · debug' })
     const k = (window as unknown as { koanHang?: Record<string, unknown> }).koanHang
-    const params = { quality: (k?.getQuality as (() => string) | undefined)?.() ?? 'full', smaa: true, exposure: 1.0, fps: 0, walk: '', works: 0 }
-    pane.addBinding(params, 'quality', { options: { full: 'full', balanced: 'balanced', low: 'low' } }).on('change', (ev) => (k?.quality as ((q: string) => void) | undefined)?.(ev.value))
-    pane.addBinding(params, 'smaa').on('change', (ev) => { const s = k?.smaa as { enabled: boolean } | undefined; if (s) s.enabled = ev.value })
+    const fx = { ...(ui.fx ?? { lut: true, sky: true, plants: true, glass: true, surface: true, outline: true, dither: true, smaa: true }) }
+    const params = { quality: ui.quality, look: ui.look, exposure: 1.0, fps: 0, walk: '', works: 0 }
+    pane.addBinding(params, 'quality', { options: { full: 'full', balanced: 'balanced', low: 'low' } }).on('change', (ev) => bus.emit('set_quality', { quality: ev.value as Quality }))
+    pane.addBinding(params, 'look', { options: { clean: 'clean', wire: 'wire', textured: 'textured' } }).on('change', (ev) => bus.emit('set_look', { look: ev.value as Look }))
+    const looks = pane.addFolder({ title: 'looks' })
+    for (const key of Object.keys(fx) as FxKey[]) looks.addBinding(fx, key).on('change', (ev) => bus.emit('set_fx', { key, on: !!ev.value }))
     pane.addBinding(params, 'exposure', { min: 0.2, max: 2.5 }).on('change', (ev) => { const r = k?.renderer as { toneMappingExposure: number } | undefined; if (r) r.toneMappingExposure = ev.value })
     pane.addBinding(params, 'fps', { readonly: true, view: 'graph', min: 0, max: 144 })
     pane.addBinding(params, 'walk', { readonly: true })

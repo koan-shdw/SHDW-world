@@ -13,7 +13,7 @@
   import AddPanel from './AddPanel.svelte'
   import Debug from './Debug.svelte'
 
-  let { base, version, onviewport }: { base: string; version: string; onviewport: (el: HTMLElement) => void } = $props()
+  let { base, onviewport }: { base: string; version?: string; onviewport: (el: HTMLElement) => void } = $props()
   let viewport: HTMLElement
   let small: HTMLCanvasElement, big: HTMLCanvasElement
   let add = $state<AddPanel>()
@@ -36,9 +36,9 @@
     <div class="loadbar" title={ui.loader.text}><i style="width:{ui.loader.total ? Math.round(100 * ui.loader.done / ui.loader.total) : 0}%"></i><span>{ui.loader.text}</span></div>
   {/if}
   {#if ui.room && !ui.entered}
-    <div class="title"><div class="mark big">SHDW<b>.world</b></div><div class="enter">press anywhere to enter</div><div class="keys">w a s d walk · mouse look · click hang · e touch · esc menu</div></div>
+    <div class="title"><div class="mark big">SHDW<b>.world</b></div><div class="enter">press anywhere to enter</div></div>
   {:else if ui.hud.hint === 'enter' && ui.room}
-    <div class="hint">click to enter<small>w a s d walk · mouse look · click hang · e touch · esc menu</small></div>
+    <div class="hint">click to enter</div>
   {/if}
   <div class="crosshair" class:target={ui.hud.target} hidden={!ui.hud.cross}></div>
   <div class="doortip" hidden={!ui.hud.doorTip}>{ui.hud.doorTip}</div>
@@ -64,5 +64,5 @@
   {#each ui.toasts as t (t.id)}<div class="toast {t.kind}">{t.msg}</div>{/each}
 </div>
 
-{#if ui.menuShown}<Options {version} />{/if}
+{#if ui.menuShown}<Options />{/if}
 {#if ui.debugShown}<Debug />{/if}

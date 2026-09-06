@@ -149,6 +149,7 @@ export async function startWorld(container: HTMLElement, base: string): Promise<
     bus.on('set_look', ({ look: l }) => { look = l; applyLook() }),
     bus.on('set_eye', ({ cm }) => { if (cm >= 100 && cm <= 220) { level.eyeHeight = cm / 100; bus.toast(`eye height ${cm} cm`) } }),
     bus.on('accent', ({ css }) => setWireColor(built.wire, css)),
+    bus.on('world_ready', () => setWireColor(built.wire, getComputedStyle(document.documentElement).getPropertyValue('--accent').trim() || '#66BDE6')),
     bus.on('hold', ({ id }) => {
       const a = id ? art.library.find((x) => x.id === id) ?? null : null
       if (a && art.isPlaced(a.id)) { bus.toast(`${a.title} is on the wall · walk up to it and press e`, 'warn'); return }
@@ -303,7 +304,7 @@ export async function startWorld(container: HTMLElement, base: string): Promise<
       else {
         const a = art.library.find((x) => x.id === p.art)
         const c = p.kind === 'sculpture' && p.pos ? tv.set(p.pos[0], p.pos[1] + (a ? a.h / 200 + (p.plinth?.h ?? 0) / 100 : 1), p.pos[2]) : (() => { const w = level.walls.find((x) => x.id === p.wall); if (!w || !a) return tv.set(0, 0, 0); const dx = w.b[0] - w.a[0], dz = w.b[1] - w.a[1]; const L = Math.hypot(dx, dz) || 1; const uc = p.u + a.w / 200; return tv.set(w.a[0] + dx / L * uc, floorOf(level, p.level).floorY + p.topY - a.h / 200, w.a[1] + dz / L * uc) })()
-        if (c.distanceTo(camera.position) > 3.4) closeTouch(); else anchors.set('touch', c)
+        if (c.distanceTo(camera.position) > 2.3) closeTouch(); else anchors.set('touch', c)
       }
     }
     let hangTip: string | null = null
@@ -312,15 +313,15 @@ export async function startWorld(container: HTMLElement, base: string): Promise<
       const pv = art.preview
       if (art.held) {
         hangTip = art.held.kind === 'sculpture'
-          ? (pv.floor ? (pv.ok ? 'click · place here · r turn · right click put back' : `can't place here · ${pv.why}`) : 'look at the floor · right click put back')
-          : (pv.hit ? (pv.ok ? 'click · hang here · right click put back' : `can't hang here · ${pv.why}`) : 'look at a wall · right click put back')
+          ? (pv.floor ? (pv.ok ? 'place' : pv.why) : null)
+          : (pv.hit ? (pv.ok ? 'hang' : pv.why) : null)
       } else if (art.selected && !touch) {
         const sel = art.layout.items.find((p) => p.id === art.selected)
-        if (sel) hangTip = `${nameOf(sel.art)} selected · e touch · delete · arrows · tab next`
+        if (sel) hangTip = nameOf(sel.art)
       }
     }
     const near = locked ? walker.nearestDoor() : null
-    const doorTip = near ? (near.opening.door?.toggle ? (near.open ? 'e · close door' : 'e · open door') : 'door · closed') : null
+    const doorTip = near ? (near.opening.door?.toggle ? (near.open ? 'close' : 'open') : 'locked') : null
     const target = !!lookAt && !touch
     const hudKey = `${locked}|${menuOpen}|${hangTip}|${doorTip}|${target}`
     if (hudKey !== lastHud) { lastHud = hudKey; bus.emit('hud', { hint: locked || menuOpen || bigShown ? null : 'enter', cross: locked, doorTip, hangTip, target }) }
@@ -331,11 +332,10 @@ export async function startWorld(container: HTMLElement, base: string): Promise<
     minimap?.draw(s)
     // anchors: the wall widget rides the ghost; a touchable work carries its prompt
     anchors.set('hang-widget', locked && art.held?.kind === 'painting' && art.preview.hit ? art.preview.hit.point : null)
-    if (lookAt && !touch) { const a = art.library.find((x) => x.id === lookAt.art); const pf = floorOf(level, lookAt.level).floorY; const w = level.walls.find((x) => x.id === lookAt.wall); if (a && w && lookAt.kind === 'painting') { const [dx, dz] = [w.b[0] - w.a[0], w.b[1] - w.a[1]]; const L = Math.hypot(dx, dz) || 1; const uc = lookAt.u + a.w / 200; anchors.set('work', new THREE.Vector3(w.a[0] + dx / L * uc, pf + lookAt.topY + 0.08, w.a[1] + dz / L * uc), 'e · touch') } else if (a && lookAt.pos) anchors.set('work', new THREE.Vector3(lookAt.pos[0], lookAt.pos[1] + a.h / 100 + (lookAt.plinth?.h ?? 0) / 100 + 0.1, lookAt.pos[2]), 'e · touch') }
+    if (lookAt && !touch) { const a = art.library.find((x) => x.id === lookAt.art); const pf = floorOf(level, lookAt.level).floorY; const w = level.walls.find((x) => x.id === lookAt.wall); if (a && w && lookAt.kind === 'painting') { const [dx, dz] = [w.b[0] - w.a[0], w.b[1] - w.a[1]]; const L = Math.hypot(dx, dz) || 1; const uc = lookAt.u + a.w / 200; anchors.set('work', new THREE.Vector3(w.a[0] + dx / L * uc, pf + lookAt.topY + 0.08, w.a[1] + dz / L * uc), 'touch') } else if (a && lookAt.pos) anchors.set('work', new THREE.Vector3(lookAt.pos[0], lookAt.pos[1] + a.h / 100 + (lookAt.plinth?.h ?? 0) / 100 + 0.1, lookAt.pos[2]), 'touch') }
     else anchors.set('work', null)
     const sz = renderer.size; anchors.publish(camera, sz.x, sz.y)
   })
-  bus.toast(`level built · ${level.walls.length} walls · click to enter`)
 
   // ---- debug handle + shot(): renders and posts a JPEG to the dev server (docs/sheet) --------------------------------
   const shot = async (name: string): Promise<string> => {

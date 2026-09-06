@@ -14,7 +14,6 @@
       <div class="title">{held.title}</div>
       <div class="size">{held.w} × {held.h} × {held.d} cm</div>
       {#if held.kind === 'sculpture' && look}<div class="size">{look.plinth ? `plinth ${look.plinth.w} × ${look.plinth.d} × ${look.plinth.h}` : 'no plinth'}</div>{/if}
-      <div class="keys">q puts it down · h hands view</div>
     </div>
   </div>
 {/if}

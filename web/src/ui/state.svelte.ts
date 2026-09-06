@@ -15,7 +15,7 @@ export const ui = $state({
   loader: { active: false, done: 0, total: 0, text: '' } as LoaderState,
   mapShown: false,
   menuShown: false,
-  menuTab: 'level',
+  menuTab: 'controls',
   touch: null as TouchSnapshot | null,
   play: null as PlaySettings | null,
   debugShown: false,
@@ -48,6 +48,7 @@ bus.on('play', ({ settings }) => { ui.play = settings })
 bus.on('debug_toggle', () => { ui.debugShown = !ui.debugShown })
 bus.on('anchor', (a) => { ui.anchors[a.id] = a })
 bus.on('toast', ({ msg, kind, ms }) => {
+  if (!kind || kind === 'ok') return                       // owner 09-06: no chatter, errors only
   const t: Toast = { id: toastSeq++, msg, kind: kind ?? 'ok' }
   ui.toasts.push(t)
   setTimeout(() => { const i = ui.toasts.findIndex((x) => x.id === t.id); if (i >= 0) ui.toasts.splice(i, 1) }, ms ?? 4000)
