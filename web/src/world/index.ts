@@ -142,7 +142,7 @@ export async function startWorld(container: HTMLElement, base: string): Promise<
   await art.load()
   // the share link (?layout=) is a read-only view: no store, no writes; otherwise the store's show replaces this browser's
   if (new URLSearchParams(location.search).get('layout')) art.store = null
-  else { art.store = store; const show = await store.load(); if (show) art.setShow(show) }
+  else { art.store = store; const show = await store.load(); if (show) art.setShow(show.items, show.art) }
   artSnapshot()
   walker.onChange = () => art.onLevelChange()
 
@@ -167,7 +167,7 @@ export async function startWorld(container: HTMLElement, base: string): Promise<
     bus.on('set_eye', ({ cm }) => { if (cm >= 100 && cm <= 220) { level.eyeHeight = cm / 100; bus.toast(`eye height ${cm} cm`) } }),
     bus.on('accent', ({ css }) => setWireColor(built.wire, css)),
     bus.on('world_ready', () => setWireColor(built.wire, getComputedStyle(document.documentElement).getPropertyValue('--accent').trim() || '#66BDE6')),
-    bus.on('door_check', async ({ key, who }) => { const r = await store.check(key, who); bus.emit('door_result', r); if (r.ok && art.store) { const show = await store.load(); if (show) art.setShow(show); artSnapshot() } }),
+    bus.on('door_check', async ({ key, who }) => { const r = await store.check(key, who); bus.emit('door_result', r); if (r.ok && art.store) { const show = await store.load(); if (show) art.setShow(show.items, show.art); artSnapshot() } }),
     bus.on('door_leave', () => { store.leave(); art.hold(null); closeTouch(); artSnapshot() }),
     bus.on('hold', ({ id }) => {
       if (!ours()) return
@@ -183,8 +183,13 @@ export async function startWorld(container: HTMLElement, base: string): Promise<
       if (patch.reduceMotion !== undefined) feel.reduce = patch.reduceMotion
       if (patch.headBob !== undefined) walker.headBob = patch.headBob
     }),
-    bus.on('add_local', ({ item }) => { void art.addLocal(item).then((a) => bus.toast(`${a.title} · ${a.w} × ${a.h} × ${a.d} cm in the library`)) }),
-    bus.on('remove_local', ({ id }) => { void art.removeLocal(id) }),
+    bus.on('add_local', ({ item }) => {
+      // SHOW.md §5: behind the door a drop goes up to the store for everyone; if the store will not take it, it stays in this browser
+      const go = store.open && art.store ? art.addStore(item).catch((e) => { bus.toast(`not in the store · ${(e as Error).message} · kept in this browser only`, 'warn'); return art.addLocal(item) }) : art.addLocal(item)
+      void go.then((a) => bus.toast(`${a.title} · ${a.w} × ${a.h} × ${a.d} cm in the library`))
+    }),
+    bus.on('push_local', ({ id }) => { void art.pushLocal(id).then((a) => bus.toast(`${a.title} is in the store`)).catch((e) => bus.toast(`not in the store · ${(e as Error).message}`, 'bad')) }),
+    bus.on('remove_local', ({ id }) => { void art.removeLocal(id).catch((e) => bus.toast(`not removed · ${(e as Error).message}`, 'bad')) }),
     bus.on('set_guides', ({ patch }) => art.setGuides(patch)),
     bus.on('set_sculpt', ({ patch }) => { if (!art.setLook(patch)) bus.toast('hold or look at a sculpture first', 'warn') }),
     bus.on('rotate', ({ deg }) => { if (!art.rotate(deg)) bus.toast('hold or look at a sculpture first', 'warn'); else artSnapshot() }),
@@ -302,7 +307,7 @@ export async function startWorld(container: HTMLElement, base: string): Promise<
   }
   // losing the lock (esc) frees the mouse and nothing more: click puts you back; the menu is the settings button top right (owner 09-07)
   bus.on('menu_close', () => closeMenu())
-  bus.on('menu_open', () => openMenu())
+  bus.on('menu_open', ({ tab }) => openMenu(tab))
   bus.on('ui_ring', ({ open, x, y }) => { if (open) input.openRing(x, y); else input.closeRing() })
   // token save (ART.md §4, the owner's path): layouts/<name>.json into the repo through the GitHub contents API
   bus.on('repo_save', ({ name, token }) => {
@@ -322,7 +327,7 @@ export async function startWorld(container: HTMLElement, base: string): Promise<
   const tv = new THREE.Vector3()
   const STEP = 1 / 120; let acc = 0
   // SHOW.md §4: every 10 s, send what waits and bring in what the other person did
-  const tick = window.setInterval(async () => { const d = await store.tick(); if (d && art.store && art.applyShow(d.items, d.deleted)) artSnapshot() }, TICK_MS)
+  const tick = window.setInterval(async () => { const d = await store.tick(); if (d && art.store && art.applyShow(d.items, d.deleted, d.art, d.artDeleted)) artSnapshot() }, TICK_MS)
   renderer.start((dt) => {
     elapsed += dt; looks.update(elapsed)
     // fixed step (GAME.md §1): the walker moves in 1/120 s steps, the camera blends between the last two

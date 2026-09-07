@@ -10,13 +10,11 @@
   import Ring from './Ring.svelte'
   import WallWidget from './WallWidget.svelte'
   import Options from './Options.svelte'
-  import AddPanel from './AddPanel.svelte'
   import Debug from './Debug.svelte'
 
   let { base, onviewport }: { base: string; version?: string; onviewport: (el: HTMLElement) => void } = $props()
   let viewport: HTMLElement
   let small: HTMLCanvasElement, big: HTMLCanvasElement
-  let add = $state<AddPanel>()
   onMount(() => {
     const off = bus.on('world_ready', () => bus.emit('mount_maps', { small, big }))   // the world listens once it exists
     onviewport(viewport)
@@ -24,10 +22,12 @@
   })
   $effect(() => { if (ui.hud.cross) ui.entered = true })
   const outside = (e: MouseEvent) => { if (ui.slotRing && !(e.target as HTMLElement).closest?.('.ring, .hotbar')) { ui.slotRing = null; bus.emit('ui_ring', { open: false, x: 0, y: 0 }) } }
+  // SHOW.md §5: files dropped anywhere land in settings › art (behind the door)
+  const dropAnywhere = (e: DragEvent) => { e.preventDefault(); if (!ui.door.open) return; const files = Array.from(e.dataTransfer?.files ?? []); if (!files.length) return; bus.emit('menu_open', { tab: 'art' }); setTimeout(() => bus.emit('drop_files', { files }), 80) }
   const mapClick = (e: MouseEvent) => { const r = big.getBoundingClientRect(); bus.emit('map_click', { px: e.clientX - r.left, py: e.clientY - r.top }) }
 </script>
 
-<div class="viewport" bind:this={viewport} ondragover={(e) => e.preventDefault()} ondrop={(e) => add?.drop(e)} role="presentation">
+<div class="viewport" bind:this={viewport} ondragover={(e) => e.preventDefault()} ondrop={dropAnywhere} role="presentation">
   {#if ui.failed}
     <div class="loading"><div>SHDW.world</div><div class="txt">level.json failed: {ui.failed}</div></div>
   {:else if !ui.room}
@@ -53,8 +53,7 @@
 
 {#if ui.door.open}
   <div class="bottom" class:dim={!ui.hud.cross}>
-    <AddPanel bind:this={add} />
-    <Hotbar {base} onadd={() => add?.open()} />
+    <Hotbar {base} onadd={() => bus.emit('menu_open', { tab: 'art' })} />
   </div>
   <Hands {base} />
 {/if}

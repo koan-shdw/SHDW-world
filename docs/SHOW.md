@@ -154,3 +154,24 @@ remembers the door in this browser: open it once, it stays open on this machine 
   down; his Chrome dropped it within the tick, untouched. The word on the store is a placeholder until he sets his own
   (`npx.cmd wrangler secret put DOOR` from `worker/`).
 - Not yet: dropped art is still per browser until S2, so a painting SHDW drops does not show for YOZO yet.
+
+## 12. S2 as built (09-07)
+
+- The Worker grew the art routes (`worker/src/index.ts`): `PUT /art/<id>/file` (jpg, png, webp, glb, 25 MB, into R2
+  `shdw-world-art`), `PUT /art/<id>/thumb`, `PUT /art/<id>` (meta into D1 `art`, a history row `art`), `DELETE /art/<id>`
+  (meta + files, a row `art-delete`), `GET /art/<id>.<ext>` and `.thumb.jpg` (from R2, cached a year, CORS open).
+  `GET /show` carries `art` (the whole library) and `?since=` carries `art` + `artDeleted`.
+- The site: `web/src/world/art/upload.ts` resizes in the browser (2048 long side, JPEG 88, PNG kept with alpha, 240 px
+  thumb); `store.ts` `uploadArt` / `deleteArt`; `art.ts` library = repo + the store + this browser (`setArt`, `applyArt`,
+  `addStore`, `pushLocal`); settings › **art** (`Options.svelte`) = choose files / drop anywhere → the AddPanel → the
+  store, the library list with `on wall`, `built in`, `this browser only`, `to the store`, `all to the store`, `remove`.
+  The bar's `+` is gone; an empty bar says add art in settings.
+- Proven against `wrangler dev` (local D1 + R2): a drop from the pane (the door, SHDW) went up as jpg + thumb + meta,
+  hung on the south wall, and his Chrome (public) showed the painting on the wall from the store on open; a work that
+  lived only in the pane went up with `to the store` under the same id.
+- **Pending his hand**: R2 must be enabled once in the Cloudflare dashboard (the CLI refuses: code 10042); then
+  `npx.cmd wrangler deploy` from `worker/` and the site push. Until then the live site's art tab talks to a Worker
+  without the art routes: an upload says `not in the store · the store said 404 · kept in this browser only`.
+- Dev: `web/.env.local` with `VITE_STORE=http://localhost:8787` points a dev build at `npx.cmd wrangler dev --port 8787
+  --local` (schema first: `wrangler d1 execute shdw-world --local --file schema.sql`; the word in `worker/.dev.vars`,
+  ignored by git).

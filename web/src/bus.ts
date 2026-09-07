@@ -46,7 +46,9 @@ export interface Events {
   anchor: { id: string; x: number; y: number; visible: boolean; text?: string }   // R3: world points the UI follows (HANG widget, work labels)
   // ui → world
   menu_close: Record<string, never>
-  menu_open: Record<string, never>
+  menu_open: { tab?: string }
+  drop_files: { files: File[] }
+  push_local: { id: string }                           // SHOW.md §5: a work that lives only in this browser goes up to the store, same id, its placements follow                        // SHOW.md §5: dropped anywhere, they land in settings › art
   door_state: { open: boolean; who: Who | null }      // SHOW.md §3: the door in this browser
   door_check: { key: string; who: Who }
   door_result: { ok: boolean; error?: string }

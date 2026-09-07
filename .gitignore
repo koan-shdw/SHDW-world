@@ -10,3 +10,5 @@ art/sculpt/_standin/
 
 # wrangler cache (account id only, never in the repo)
 .wrangler/
+.dev.vars
+*.local

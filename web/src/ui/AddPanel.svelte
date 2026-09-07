@@ -27,7 +27,8 @@
     try { img = await readImage(f) } catch { bus.toast(`${f.name}: not an image`, 'warn'); return }
     pending.push({ key: seq++, name: f.name, data: img.data, iw: img.w, ih: img.h, title: f.name.replace(/\.[a-z0-9]+$/i, ''), h: 90, w: Math.round(90 * img.w / img.h), d: 4, edge: 'wrap', kind: 'painting' })
   }
-  const takeFiles = (files: FileList | null) => { if (files) for (const f of Array.from(files)) void addForm(f) }
+  const takeFiles = (files: FileList | File[] | null) => { if (files) for (const f of Array.from(files)) void addForm(f) }
+  $effect(() => bus.on('drop_files', ({ files }) => takeFiles(files)))
   const commit = (p: Pending) => {
     const h = Number(p.h), w = Number(p.w), d = Number(p.d)
     if (!(h > 0 && w > 0 && d >= 0)) { bus.toast('h w d in cm, please', 'warn'); return }

@@ -3,9 +3,10 @@
 // per item, 1.5 s after the last change to that item, and wait in a pending queue when the store is away. A 10 s tick
 // brings in what the other person did.
 import { bus, type Who } from '../bus'
-import type { Placed } from './art/art'
+import type { Placed, ArtItem } from './art/art'
+import type { Prepped } from './art/upload'
 
-export const STORE = 'https://shdw-world-show.shdwart.workers.dev'
+export const STORE: string = (import.meta.env.VITE_STORE as string | undefined) || 'https://shdw-world-show.shdwart.workers.dev'   // VITE_STORE in web/.env.local points a dev build at `wrangler dev`
 const DOOR_KEY = 'shdw-world-door'
 const PENDING_KEY = 'shdw-world-pending'
 export const DEBOUNCE_MS = 1500
@@ -13,11 +14,15 @@ export const TICK_MS = 10000
 
 export interface Door { key: string; who: Who }
 export interface ShowItem extends Placed { who?: string; ts?: number }
+export interface ArtMeta extends Omit<ArtItem, 'store'> { who?: string; ts?: number; ext?: string; hasThumb?: boolean }
+export interface Show { items: ShowItem[]; art: ArtMeta[] }
+export interface Changes { items: ShowItem[]; deleted: string[]; art: ArtMeta[]; artDeleted: string[] }
 export interface HistoryRow { ts: number; who: string; op: string; id: string; item: ShowItem | null }
 type Pending = { op: 'put'; id: string; item: Placed } | { op: 'del'; id: string } | { op: 'clear' }
 
 /** the store's copy of an item, without the store's own stamps */
 export const strip = (p: ShowItem): Placed => { const { who, ts, ...rest } = p; void who; void ts; return rest as Placed }
+export const artUrl = (id: string, ext: string): string => `${STORE}/art/${encodeURIComponent(id)}.${ext}`
 
 export class Store {
   door: Door | null = null
@@ -60,23 +65,41 @@ export class Store {
   }
 
   // ---- reads ----------------------------------------------------------------------------------
-  async load(): Promise<ShowItem[] | null> {
+  async load(): Promise<Show | null> {
     try {
       const r = await fetch(`${STORE}/show`, { cache: 'no-store' })
       if (!r.ok) throw new Error(String(r.status))
-      const j = (await r.json()) as { version: number; items: ShowItem[] }
+      const j = (await r.json()) as { version: number; items: ShowItem[]; art?: ArtMeta[] }
       this.version = j.version; this.away = false
-      return j.items
+      return { items: j.items, art: j.art ?? [] }
     } catch { this.gone(); return null }
   }
-  async since(): Promise<{ items: ShowItem[]; deleted: string[] } | null> {
+  async since(): Promise<Changes | null> {
     try {
       const r = await fetch(`${STORE}/show?since=${this.version + 1}`, { cache: 'no-store' })
       if (!r.ok) throw new Error(String(r.status))
-      const j = (await r.json()) as { version: number; items: ShowItem[]; deleted: string[] }
+      const j = (await r.json()) as { version: number; items: ShowItem[]; deleted: string[]; art?: ArtMeta[]; artDeleted?: string[] }
       this.version = Math.max(this.version, j.version); this.away = false
-      return { items: j.items, deleted: j.deleted }
+      return { items: j.items, deleted: j.deleted, art: j.art ?? [], artDeleted: j.artDeleted ?? [] }
     } catch { this.gone(); return null }
+  }
+  /** SHOW.md §5: the file, the thumb, then the meta; the work is in the store for everyone when this returns */
+  async uploadArt(id: string, meta: ArtMeta, prepped: Prepped): Promise<ArtMeta> {
+    if (!this.door) throw new Error('the door')
+    const h = this.headers()
+    const f = await fetch(`${STORE}/art/${encodeURIComponent(id)}/file`, { method: 'PUT', headers: { ...h, 'content-type': prepped.type }, body: prepped.blob })
+    if (!f.ok) throw new Error(f.status === 413 ? 'too big for the store' : f.status === 401 ? 'the door' : `the store said ${f.status}`)
+    const { ext } = (await f.json()) as { ext: string }
+    if (prepped.thumb) { const t = await fetch(`${STORE}/art/${encodeURIComponent(id)}/thumb`, { method: 'PUT', headers: { ...h, 'content-type': 'image/jpeg' }, body: prepped.thumb }); if (!t.ok) throw new Error(`the store said ${t.status}`) }
+    const full: ArtMeta = { ...meta, id, ext, hasThumb: !!prepped.thumb }
+    const m = await fetch(`${STORE}/art/${encodeURIComponent(id)}`, { method: 'PUT', headers: h, body: JSON.stringify(full) })
+    if (!m.ok) throw new Error(`the store said ${m.status}`)
+    return full
+  }
+  async deleteArt(id: string): Promise<void> {
+    if (!this.door) throw new Error('the door')
+    const r = await fetch(`${STORE}/art/${encodeURIComponent(id)}`, { method: 'DELETE', headers: this.headers() })
+    if (!r.ok) throw new Error(`the store said ${r.status}`)
   }
   async history(before?: number): Promise<HistoryRow[] | null> {
     try {
@@ -133,7 +156,7 @@ export class Store {
   private gone(): void { if (!this.away) { this.away = true; bus.toast('not saved · the store is away', 'warn') } }
 
   /** every 10 s: send what waits, then bring in what changed */
-  async tick(): Promise<{ items: ShowItem[]; deleted: string[] } | null> {
+  async tick(): Promise<Changes | null> {
     if (this.pending.length) await this.flush()
     return this.since()
   }

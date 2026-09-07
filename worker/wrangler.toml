@@ -11,3 +11,7 @@ database_id = "95a248ec-b8ec-4ad0-b3d1-94a3c43a70e6"
 
 [observability]
 enabled = true
+
+[[r2_buckets]]
+binding = "ART"
+bucket_name = "shdw-world-art"

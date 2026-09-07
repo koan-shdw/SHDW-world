@@ -1,6 +1,7 @@
 // P4 gate 1: the library, hold-walk-look-click hanging, the HANG widget, layouts (docs/ART.md §1-4, §6).
 import * as THREE from 'three'
-import { strip, type Store, type ShowItem } from '../store'
+import { strip, artUrl, type Store, type ShowItem, type ArtMeta } from '../store'
+import { prepPainting, prepModel } from './upload'
 import { type Level, type Wall, wallLength, wallDir, wallPoint, floorOf } from '../room/level'
 import type { Walker } from '../walk'
 import type { Loader } from '../loader'
@@ -12,7 +13,7 @@ export interface Plinth { w: number; d: number; h: number; colour: string }
 export interface TexPick { name: string; cm: number; url?: string }      // name 'custom' carries his own image as a data URL
 /** the look of a sculpture: tint, tile, plinth (null = no plinth). Defaults live on the ArtItem, each placed copy keeps its own */
 export interface SculptLook { colour: string; texture: TexPick | null; plinth: Plinth | null; parts?: Record<string, string> }   // parts: one colour per named part of the model
-export interface ArtItem { id: string; kind: Kind; title: string; file?: string; data?: string; model?: string; thumb?: string; w: number; h: number; d: number; edge: string; colour?: string; texture?: TexPick | null; plinth?: Plinth | null; parts?: Record<string, string> }
+export interface ArtItem { id: string; kind: Kind; title: string; file?: string; data?: string; model?: string; thumb?: string; store?: boolean; w: number; h: number; d: number; edge: string; colour?: string; texture?: TexPick | null; plinth?: Plinth | null; parts?: Record<string, string> }
 export interface Placed { id: string; art: string; kind: Kind; wall: string; level: string; u: number; topY: number; snap: SnapLine | null; pos?: [number, number, number]; yaw?: number; colour?: string; texture?: TexPick | null; plinth?: Plinth | null; parts?: Record<string, string> }
 export const TEXTURE_CHIPS: { name: string; tile: string | null }[] = [
   { name: 'none', tile: null }, { name: 'concrete', tile: 'concrete' }, { name: 'plaster', tile: 'wall-white' }, { name: 'plywood', tile: 'plywood' },
@@ -54,6 +55,9 @@ export class ArtSystem {
   hands = true                                    // the held work shows in your hands until a wall takes it (H toggles)
   store: Store | null = null                      // SHOW.md §4: the show's truth; null = a read-only view (?layout=)
   private synced = new Map<string, string>()      // id → the item as the store last had it
+  private repo: ArtItem[] = []                    // art/index.json, the built-ins
+  storeArt: ArtItem[] = []                        // SHOW.md §5: the works uploaded on the site, for everyone
+  private artSeen = new Map<string, number>()     // id → ts of the store's art as this browser has it
   static REACH = 1.8                              // metres: walk up to it (owner 09-06: touch only when closer)
   mode: 'walk' | 'hang' | 'level' = 'walk'
   preview: Preview = { hit: null, u0: 0, top: 0, ok: false, why: '' }
@@ -92,14 +96,74 @@ export class ArtSystem {
 
   // ---- library ----------------------------------------------------------------------------
   async load(): Promise<void> {
-    let repo: ArtItem[] = []
-    try { const r = await fetch(`${this.base}art/index.json`); if (r.ok) repo = ((await r.json()).items ?? []).map((i: ArtItem) => ({ ...i, kind: i.kind ?? 'painting', edge: i.edge ?? 'wrap' })) } catch { /* no repo art yet */ }
+    try { const r = await fetch(`${this.base}art/index.json`); if (r.ok) this.repo = ((await r.json()).items ?? []).map((i: ArtItem) => ({ ...i, kind: i.kind ?? 'painting', edge: i.edge ?? 'wrap' })) } catch { /* no repo art yet */ }
     this.local = (await idbGet<ArtItem[]>('items')) ?? []
-    this.library = [...repo, ...this.local]
+    this.relib()
     try { const d = localStorage.getItem(DRAFT_KEY); if (d) { const j = JSON.parse(d) as Layout; if (j.format === 'koan-hang-layout/2') this.layout = { ...j, guides: { ...defaultGuides(), ...j.guides } } } } catch { /* fresh */ }
     this.rebuild(); this.onChange?.()
   }
-  /** his dropped image: title + h w d in cm; the image travels as a data URL */
+  private relib(): void { this.library = [...this.repo, ...this.storeArt, ...this.local] }
+  /** a work as the store describes it: the image and the thumb are the store's files */
+  private fromStore(m: ArtMeta): ArtItem {
+    const { who, ts, ext, hasThumb, ...rest } = m; void who; void ts
+    const a: ArtItem = { ...(rest as ArtItem), store: true, kind: rest.kind ?? 'painting', edge: rest.edge ?? 'wrap' }
+    if (a.kind === 'sculpture') { a.model = artUrl(a.id, ext ?? 'glb'); a.data = undefined; a.colour = a.colour ?? '#f2f2ee'; a.texture = a.texture ?? null; a.plinth = a.plinth === undefined ? defaultPlinth() : a.plinth }
+    else { a.data = artUrl(a.id, ext ?? 'jpg'); if (hasThumb) a.thumb = artUrl(a.id, 'thumb.jpg') }
+    return a
+  }
+  /** the store's library: replace it whole (on open) */
+  setArt(art: ArtMeta[]): void {
+    this.storeArt = art.map((m) => this.fromStore(m)); this.artSeen = new Map(art.map((m) => [m.id, m.ts ?? 0]))
+    this.relib()
+  }
+  /** the tick: new or changed works come in, removed ones go out with whatever hung on them */
+  applyArt(art: ArtMeta[], deleted: string[]): boolean {
+    let changed = false
+    for (const m of art) {
+      if ((this.artSeen.get(m.id) ?? -1) >= (m.ts ?? 0)) continue
+      const a = this.fromStore(m); const i = this.storeArt.findIndex((x) => x.id === a.id)
+      if (i >= 0) this.storeArt[i] = a; else this.storeArt.push(a)
+      this.artSeen.set(a.id, m.ts ?? 0); this.textures.delete(a.id); this.models.delete(a.id); changed = true
+    }
+    for (const id of deleted) {
+      if (!this.artSeen.has(id)) continue
+      this.storeArt = this.storeArt.filter((x) => x.id !== id); this.artSeen.delete(id); changed = true
+      if (this.held?.id === id) this.hold(null)
+    }
+    if (changed) this.relib()
+    return changed
+  }
+  /** SHOW.md §5: his dropped work goes up to the store, in the library for everyone when this returns */
+  async addStore(item: Omit<ArtItem, 'id' | 'kind'> & { data: string; kind?: Kind }): Promise<ArtItem> {
+    if (!this.store?.open) throw new Error('the door')
+    const kind: Kind = item.kind ?? 'painting'
+    const id = `${item.title.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '') || 'work'}-${Date.now().toString(36)}`
+    const prepped = kind === 'sculpture' ? await prepModel(item.data) : await prepPainting(item.data)
+    const { data, ...rest } = item; void data
+    const meta: ArtMeta = { ...(rest as Omit<ArtItem, 'id'>), id, kind, edge: item.edge ?? 'wrap' }
+    if (kind === 'sculpture') { meta.colour = meta.colour ?? '#f2f2ee'; meta.texture = meta.texture ?? null; meta.plinth = meta.plinth === undefined ? defaultPlinth() : meta.plinth }
+    const full = await this.store.uploadArt(id, meta, prepped)
+    const a = this.fromStore({ ...full, ts: Date.now() })
+    this.storeArt.push(a); this.artSeen.set(a.id, Date.now()); this.relib()
+    this.onChange?.()
+    return a
+  }
+  /** a work that lives only in this browser goes up to the store under the same id, so what hangs on it keeps hanging, now for everyone */
+  async pushLocal(id: string): Promise<ArtItem> {
+    if (!this.store?.open) throw new Error('the door')
+    const a = this.local.find((x) => x.id === id); if (!a) throw new Error('not in this browser')
+    const src = a.kind === 'sculpture' ? a.model : a.data
+    if (!src || !src.startsWith('data:')) throw new Error('no file to send')
+    const prepped = a.kind === 'sculpture' ? await prepModel(src) : await prepPainting(src)
+    const { data, model, thumb, store, ...rest } = a; void data; void model; void thumb; void store
+    const full = await this.store.uploadArt(a.id, { ...(rest as Omit<ArtItem, 'store'>), id: a.id }, prepped)
+    const s = this.fromStore({ ...full, ts: Date.now() }); if (a.kind === 'sculpture' && a.thumb) s.thumb = a.thumb
+    this.storeArt.push(s); this.artSeen.set(s.id, Date.now())
+    this.local = this.local.filter((x) => x.id !== id); await idbSet('items', this.local)
+    this.relib(); this.rebuild(); this.onChange?.()
+    return s
+  }
+  /** his dropped image: title + h w d in cm; the image travels as a data URL (this browser only, when the store is away) */
   async addLocal(item: Omit<ArtItem, 'id' | 'kind'> & { data: string; kind?: Kind }): Promise<ArtItem> {
     const id = `${item.title.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '') || 'work'}-${Date.now().toString(36)}`
     const a: ArtItem = { ...item, id, kind: item.kind ?? 'painting', edge: item.edge ?? 'wrap' }
@@ -110,6 +174,8 @@ export class ArtSystem {
     return a
   }
   async removeLocal(id: string): Promise<void> {
+    const s = this.storeArt.find((a) => a.id === id)
+    if (s) { if (!this.store?.open) throw new Error('the door'); await this.store.deleteArt(id); this.storeArt = this.storeArt.filter((a) => a.id !== id); this.artSeen.delete(id) }
     this.local = this.local.filter((a) => a.id !== id); this.library = this.library.filter((a) => a.id !== id)
     this.layout.items = this.layout.items.filter((p) => p.art !== id)
     await idbSet('items', this.local); this.rebuild(); this.autosave(); this.onChange?.()
@@ -137,7 +203,7 @@ export class ArtSystem {
     const g = this.models.get(a.id); if (g) return g
     if (!this.modelPending.has(a.id)) {
       this.modelPending.add(a.id)
-      const src = a.model && (a.model.startsWith('data:') || a.model.startsWith('blob:')) ? a.model : `${this.base}art/${a.model}`
+      const src = a.model && /^(data:|blob:|https?:)/.test(a.model) ? a.model : `${this.base}art/${a.model}`
       this.loader.model(src, 'art').then((scene) => { this.models.set(a.id, scene); this.modelPending.delete(a.id); this.onModel?.(a, scene); this.rebuild(); if (this.held?.id === a.id) this.hold(a) })
         .catch((e) => { console.warn(`model failed: ${a.title}`, e); this.modelPending.delete(a.id) })
     }
@@ -268,7 +334,8 @@ export class ArtSystem {
     for (const id of [...this.synced.keys()]) if (!seen.has(id)) { this.synced.delete(id); this.store.del(id) }
   }
   /** the store's show replaces this browser's: on open, and after the door */
-  setShow(items: ShowItem[]): void {
+  setShow(items: ShowItem[], art: ArtMeta[] = []): void {
+    this.setArt(art)
     this.synced.clear()
     // an empty store and a room already hung in this browser, with the door open: this browser's show becomes the store's
     if (!items.length && this.layout.items.length && this.store?.open) { this.sync(); this.onChange?.(); return }
@@ -276,8 +343,8 @@ export class ArtSystem {
     this.rebuild(); try { localStorage.setItem(DRAFT_KEY, JSON.stringify(this.layout)) } catch { /* private */ } this.onChange?.()
   }
   /** the 10 s tick: what the other person did comes in; my own echoes and my in-flight edits are left alone */
-  applyShow(items: ShowItem[], deleted: string[]): boolean {
-    let changed = false
+  applyShow(items: ShowItem[], deleted: string[], art: ArtMeta[] = [], artDeleted: string[] = []): boolean {
+    let changed = this.applyArt(art, artDeleted)
     for (const raw of items) {
       const s = strip(raw), j = JSON.stringify(s)
       if (this.synced.get(s.id) === j || this.store?.hasPending(s.id)) continue
