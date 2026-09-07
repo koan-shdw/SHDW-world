@@ -7,3 +7,6 @@ scan/*.npy
 scan/bake/*.png
 textures/stock/
 art/sculpt/_standin/
+
+# wrangler cache (account id only, never in the repo)
+.wrangler/
