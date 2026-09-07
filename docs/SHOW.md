@@ -190,3 +190,11 @@ remembers the door in this browser: open it once, it stays open on this machine 
   closed). Open question 1 kept its default: hidden.
 - Proven on the live store: the pane (SHDW) wrote a note, held it, stuck it on the south wall, the store held it; his
   Chrome (public) received the item and drew nothing; the test note was taken down, store clean.
+
+## 14. S4 as built (09-07)
+
+- Settings › **history** (our door): every save, newest first, `time · who · what`, 200 a page, `more`. The words are
+  made in the browser from the row (`hung Tengu`, `placed YOZO vol 2`, `moved …`, `took down …`, `hung a note “…”`,
+  `added … to the library`, `removed … from the library`). Asked once, on the tab click (an effect that asked on the tab
+  looped: the bus handler's write counted as a read; gone).
+- Restore stays his word (§7).

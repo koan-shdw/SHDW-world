@@ -204,6 +204,8 @@ input[type='color'] { width: 44px; height: 30px; padding: 0 2px; background: var
 .artrow .thumb.model { display: grid; place-items: center; }
 .artrow .who { flex: 1; display: flex; flex-wrap: wrap; gap: 8px; align-items: baseline; min-width: 0; }
 .artrow .tag { font-size: 11px; opacity: .7; }
+.artrow > .num { flex: none; width: 74px; font-size: 12px; opacity: .7; }
+.artrow > b.who { flex: none; width: 46px; }
 .shake { animation: shake .35s var(--e-out); }
 @keyframes shake { 20%, 60% { transform: translateX(-6px); } 40%, 80% { transform: translateX(6px); } }
 .viewport .title .logo.big { width: min(420px, 70vw); height: auto; border-radius: 12px; box-shadow: var(--shadow); animation: pop .5s var(--e-back); }

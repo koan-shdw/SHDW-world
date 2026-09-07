@@ -2,7 +2,7 @@
 // browser. Reads are open (the public door reads the same show); writes go through the door (the shared word + your name),
 // per item, 1.5 s after the last change to that item, and wait in a pending queue when the store is away. A 10 s tick
 // brings in what the other person did.
-import { bus, type Who } from '../bus'
+import { bus, type Who, type HistoryRow } from '../bus'
 import type { Placed, ArtItem } from './art/art'
 import type { Prepped } from './art/upload'
 
@@ -17,7 +17,6 @@ export interface ShowItem extends Placed { who?: string; ts?: number }
 export interface ArtMeta extends Omit<ArtItem, 'store'> { who?: string; ts?: number; ext?: string; hasThumb?: boolean }
 export interface Show { items: ShowItem[]; art: ArtMeta[] }
 export interface Changes { items: ShowItem[]; deleted: string[]; art: ArtMeta[]; artDeleted: string[] }
-export interface HistoryRow { ts: number; who: string; op: string; id: string; item: ShowItem | null }
 type Pending = { op: 'put'; id: string; item: Placed } | { op: 'del'; id: string } | { op: 'clear' }
 
 /** the store's copy of an item, without the store's own stamps */

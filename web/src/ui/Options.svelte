@@ -3,9 +3,15 @@
   import Row from './Row.svelte'
   import AddPanel from './AddPanel.svelte'
   import { bus } from '../bus'
-  import { ui } from './state.svelte'
+  import { ui, nameOf } from './state.svelte'
   let { base }: { base: string } = $props()
-  const tabs = $derived(ui.door.open ? ['controls', 'art', 'file', 'keys', 'the door'] : ['controls', 'the door'])   // SHOW.md §2-3, §5
+  const tabs = $derived(ui.door.open ? ['controls', 'art', 'file', 'keys', 'history', 'the door'] : ['controls', 'the door'])   // SHOW.md §2-3, §5, §7
+  const when = (ts: number) => { const d = new Date(ts); const today = new Date().toDateString() === d.toDateString(); return (today ? '' : `${d.getDate()}/${d.getMonth() + 1} `) + d.toTimeString().slice(0, 5) }
+  const what = (r: { op: string; item: Record<string, unknown> | null }) => {
+    const it = r.item ?? {}; const note = it.note as { text?: string } | undefined
+    const name = note ? `a note “${(note.text ?? '').slice(0, 40)}${(note.text ?? '').length > 40 ? '…' : ''}”` : it.art ? nameOf(String(it.art)) : it.title ? String(it.title) : 'a work'
+    switch (r.op) { case 'hang': return `${it.kind === 'sculpture' ? 'placed' : 'hung'} ${name}`; case 'move': return `moved ${name}`; case 'delete': return `took down ${name}`; case 'art': return `added ${name} to the library`; case 'art-delete': return `removed ${name} from the library`; default: return `${r.op} ${name}` }
+  }
   let add = $state<AddPanel>()
   const thumbOf = (a: NonNullable<typeof ui.art>['library'][number]) => a.kind === 'sculpture' ? a.thumb ?? '' : a.thumb ?? a.data ?? `${base}data/art/${a.file}`
   const mine = (a: NonNullable<typeof ui.art>['library'][number]) => !!(a.store || a.data?.startsWith('data:') || a.model?.startsWith('data:'))
@@ -42,7 +48,7 @@
     <div class="head"><img class="logo" src="{base}brand/logo.png" alt="CULT 2026" /><span class="show">CULT by YOZO · presented by SHDW.gallery</span></div>
     <div class="body">
       <div class="tabs">
-        {#each tabs as t (t)}<button class="tab" class:on={ui.menuTab === t} onclick={() => (ui.menuTab = t)}>{t}</button>{/each}
+        {#each tabs as t (t)}<button class="tab" class:on={ui.menuTab === t} onclick={() => { ui.menuTab = t; if (t === 'history') bus.emit('history_get', {}) }}>{t}</button>{/each}
         <span class="spacer"></span>
         <button class="tab back" onclick={back}>back</button>
       </div>
@@ -83,6 +89,15 @@
           {#if ui.repo.url}<div class="note num">{ui.repo.url}</div>{/if}
           {#if ui.repo.error}<div class="note" style="color: var(--bad)">{ui.repo.error}</div>{/if}
           <div class="note">a layout in the repo opens at ?layout=name · Yozo saves a file, you drop it here, save to repo, send the link</div>
+        {:else if ui.menuTab === 'history'}
+          <div class="legend">every save · newest first{ui.history.loading ? ' · …' : ''}</div>
+          <div class="artlist">
+            {#each ui.history.rows as r (r.ts + r.op + r.id)}
+              <div class="artrow"><span class="num">{when(r.ts)}</span><b class="who">{r.who}</b><span>{what(r)}</span></div>
+            {/each}
+            {#if !ui.history.rows.length && !ui.history.loading}<div class="note">nothing yet</div>{/if}
+          </div>
+          {#if !ui.history.done && ui.history.rows.length}<div class="chips"><button class="chip" onclick={() => bus.emit('history_get', { before: ui.history.rows[ui.history.rows.length - 1].ts })}>more</button></div>{/if}
         {:else if ui.menuTab === 'the door'}
           {#if ui.door.open}
             <div class="note">you are in as <b>{ui.door.who}</b> · every change saves itself · the public sees the show, not the tools</div>

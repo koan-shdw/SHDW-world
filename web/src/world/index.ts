@@ -190,6 +190,7 @@ export async function startWorld(container: HTMLElement, base: string): Promise<
       const go = store.open && art.store ? art.addStore(item).catch((e) => { bus.toast(`not in the store · ${(e as Error).message} · kept in this browser only`, 'warn'); return art.addLocal(item) }) : art.addLocal(item)
       void go.then((a) => bus.toast(`${a.title} · ${a.w} × ${a.h} × ${a.d} cm in the library`))
     }),
+    bus.on('history_get', async ({ before }) => { const rows = await store.history(before); if (!rows) { bus.toast('the store is away', 'warn'); bus.emit('history', { rows: [], append: !!before, done: true }); return } bus.emit('history', { rows, append: !!before, done: rows.length < 200 }) }),
     bus.on('note_open', () => openNote()),
     bus.on('note_text', ({ text }) => closeNote(text)),
     bus.on('note_cancel', () => closeNote(null)),

@@ -1,5 +1,5 @@
 // UI state (REMAKE.md §2, GAME-UI): what the HTML layer knows, fed by the bus. Svelte 5 runes. The UI never imports world/.
-import { bus, type Who, type Look, type RoomInfo, type WalkSnapshot, type HudSnapshot, type ArtSnapshot, type LoaderState, type ToastKind, type FxState, type Quality, type TouchSnapshot, type PlaySettings } from '../bus'
+import { bus, type Who, type HistoryRow, type Look, type RoomInfo, type WalkSnapshot, type HudSnapshot, type ArtSnapshot, type LoaderState, type ToastKind, type FxState, type Quality, type TouchSnapshot, type PlaySettings } from '../bus'
 
 export interface Toast { id: number; msg: string; kind: ToastKind }
 
@@ -30,6 +30,7 @@ export const ui = $state({
   entered: false,
   door: { open: false, who: null as Who | null },
   noteField: false,
+  history: { rows: [] as HistoryRow[], done: false, loading: false },
   doorError: '',
 })
 
@@ -49,6 +50,8 @@ bus.on('touch', ({ touch }) => { ui.touch = touch; ui.ringAim = null; ui.ringHot
 bus.on('ring_aim', (a) => { ui.ringAim = a })
 bus.on('repo_saved', (r) => { ui.repo = { url: r.url ?? '', error: r.error ?? '' } })
 bus.on('note_field', ({ show }) => { ui.noteField = show })
+bus.on('history_get', () => { ui.history.loading = true })
+bus.on('history', ({ rows, append, done }) => { ui.history = { rows: append ? [...ui.history.rows, ...rows] : rows, done, loading: false } })
 bus.on('door_state', (d) => { ui.door = d; if (d.open) ui.doorError = '' })
 bus.on('door_result', (r) => { ui.doorError = r.ok ? '' : (r.error ?? 'wrong word') })
 let flashT = 0

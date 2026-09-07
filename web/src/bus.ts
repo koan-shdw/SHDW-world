@@ -8,6 +8,7 @@ export type Quality = 'full' | 'balanced' | 'low'
 export type FxKey = 'lut' | 'sky' | 'plants' | 'glass' | 'surface' | 'outline' | 'dither' | 'smaa'
 export type FxState = Record<FxKey, boolean>
 export type Who = 'SHDW' | 'YOZO'
+export interface HistoryRow { ts: number; who: string; op: string; id: string; item: Record<string, unknown> | null }
 
 export interface PlaySettings { sensitivity: number; fov: number; reduceMotion: boolean; headBob: boolean }
 
@@ -52,7 +53,9 @@ export interface Events {
   note_open: Record<string, never>                     // SHOW.md §6: the note slot: open the field
   note_field: { show: boolean }                        // world → UI: the field under the crosshair
   note_text: { text: string }                          // UI → world: enter: the note is in your hands
-  note_cancel: Record<string, never>                           // SHOW.md §5: a work that lives only in this browser goes up to the store, same id, its placements follow                        // SHOW.md §5: dropped anywhere, they land in settings › art
+  note_cancel: Record<string, never>
+  history_get: { before?: number }                     // SHOW.md §7: settings › history asks for a page
+  history: { rows: HistoryRow[]; append: boolean; done: boolean }                           // SHOW.md §5: a work that lives only in this browser goes up to the store, same id, its placements follow                        // SHOW.md §5: dropped anywhere, they land in settings › art
   door_state: { open: boolean; who: Who | null }      // SHOW.md §3: the door in this browser
   door_check: { key: string; who: Who }
   door_result: { ok: boolean; error?: string }
