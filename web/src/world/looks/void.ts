@@ -64,7 +64,7 @@ export class Void {
       const s = new THREE.Mesh(new THREE.CircleGeometry(400, 40), m); s.rotation.x = -Math.PI / 2; s.position.y = floorY + dy; s.renderOrder = -8 + i; this.group.add(s)
     })
     // mist across the way (owner 09-07): standing sheets, near ones small and fine, far ones huge and coarse behind the
-    // mountain, so the distance layers; the bank at 250 m veils the mountain's foot on the cloud floor (gone above its fade)
+    // mountain, so the distance layers; the bank at 350 m is the cloud the mountain's foot stands in (gone above its fade)
     const stand = (x: number, w: number, h: number, cy: number, sc: number, al: number, drift: number, order: number, fade?: [number, number]) => {
       const m = smoke(sc, drift, al, 0); m.uniforms.axis.value = 1; if (fade) (m.uniforms.fade.value as THREE.Vector2).set(fade[0], fade[1]); this.materials.push(m)
       const s = new THREE.Mesh(new THREE.PlaneGeometry(w, h), m); s.position.set(x, cy, 0); s.rotation.y = -Math.PI / 2; s.renderOrder = order; this.group.add(s)
@@ -73,7 +73,7 @@ export class Void {
     stand(82, 900, 500, floorY + 120, 0.035, 0.55, 14.1, -5)
     stand(420, 2600, 1000, floorY + 220, 0.011, 0.25, 17.3, -7)
     stand(950, 3800, 1500, floorY + 380, 0.007, 0.3, 20.5, -8)
-    stand(250, 1200, 200, floorY - 90, 0.03, 0.85, 23.7, -4, [floorY - 34, floorY - 18])
+    stand(350, 2600, 400, floorY + 60, 0.012, 0.75, 23.7, -4, [floorY + 150, floorY + 205])
     // the old flat void disc goes: the smoke is the void now
     room.traverse((o) => { const m = o as THREE.Mesh; if (m.isMesh && m.userData.kind === 'ground') m.visible = false })
   }
