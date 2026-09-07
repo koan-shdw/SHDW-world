@@ -1,0 +1,13 @@
+# SHDW.world · the store (docs/SHOW.md §8). His Cloudflare account. Deploy from this folder: npx.cmd wrangler deploy
+name = "shdw-world-show"
+main = "src/index.ts"
+compatibility_date = "2026-08-01"
+workers_dev = true
+
+[[d1_databases]]
+binding = "shdw_world"
+database_name = "shdw-world"
+database_id = "95a248ec-b8ec-4ad0-b3d1-94a3c43a70e6"
+
+[observability]
+enabled = true

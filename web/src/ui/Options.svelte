@@ -4,7 +4,11 @@
   import { bus } from '../bus'
   import { ui } from './state.svelte'
   let { base }: { base: string } = $props()
-  const tabs = ['controls', 'file', 'keys']
+  const tabs = $derived(ui.door.open ? ['controls', 'file', 'keys', 'the door'] : ['controls', 'the door'])   // SHOW.md §2-3
+  $effect(() => { if (!tabs.includes(ui.menuTab)) ui.menuTab = 'controls' })
+  let word = $state(''), who = $state<'SHDW' | 'YOZO' | null>(null), shake = $state(false)
+  const enter = () => { if (!word || !who) return; bus.emit('door_check', { key: word, who }) }
+  $effect(() => { if (ui.doorError) { shake = true; setTimeout(() => (shake = false), 400) } })
   let eye = $state(160)
   $effect(() => { if (ui.room) eye = ui.room.eyeCm })
   let loadI = $state<HTMLInputElement>()
@@ -57,6 +61,21 @@
           {#if ui.repo.url}<div class="note num">{ui.repo.url}</div>{/if}
           {#if ui.repo.error}<div class="note" style="color: var(--bad)">{ui.repo.error}</div>{/if}
           <div class="note">a layout in the repo opens at ?layout=name · Yozo saves a file, you drop it here, save to repo, send the link</div>
+        {:else if ui.menuTab === 'the door'}
+          {#if ui.door.open}
+            <div class="note">you are in as <b>{ui.door.who}</b> · every change saves itself · the public sees the show, not the tools</div>
+            <div class="chips"><button class="chip" onclick={() => bus.emit('door_leave', {})}>leave</button></div>
+          {:else}
+            <Row label="the word"><input type="password" class:shake placeholder="the shared word" bind:value={word} onkeydown={(e) => { if (e.key === 'Enter') enter() }} /></Row>
+            <div class="chips">
+              <button class="chip who shdw" class:on={who === 'SHDW'} onclick={() => (who = 'SHDW')}>SHDW</button>
+              <button class="chip who yozo" class:on={who === 'YOZO'} onclick={() => (who = 'YOZO')}>YOZO</button>
+              <span class="spacer"></span>
+              <button class="chip" disabled={!word || !who} onclick={enter}>enter</button>
+            </div>
+            {#if ui.doorError}<div class="note" style="color: var(--bad)">{ui.doorError}</div>{/if}
+            <div class="note">the door is for SHDW and YOZO · it stays open on this machine</div>
+          {/if}
         {:else}
           <table class="keys">
             <tbody>

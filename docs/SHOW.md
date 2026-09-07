@@ -70,24 +70,28 @@ remembers the door in this browser: open it once, it stays open on this machine 
   (the items are what the file carries; the art it carries must already be in the library, §5, or it is skipped with a
   toast naming it).
 
-## 5. The artwork: in the repo, add art in settings
+## 5. The artwork: uploaded on the site, in the store, for everyone
 
-- The show's works ship in the repo: `art/index.json` grows from one item to the whole show; images in
-  `art/paintings/<id>.jpg` (web size, longest side 2048, quality 88) with `art/paintings/<id>.thumb.jpg` (240 px);
-  sculptures in `art/sculpt/` as today. Every visitor loads the same library; nothing lives in IndexedDB any more for
-  the show. (A dropped local work still goes to IndexedDB for this browser only, as today, until it is committed.)
-- **The owner loads the show**: `python art/prep_library.py <folder>` reads a folder of originals plus a `sizes.csv`
-  (`file, title, h, w, d` in cm, his order h w d) → writes the web images, the thumbs and the index entries, prints what
-  it added. Commit, push, live. A sculpture goes through `art/sculpt/prep.py` as today.
-- **Add art moves into settings** (our door only): settings › **art**: the drop box (the AddPanel that is on the bar
-  today, unchanged inside) and the library list (thumb, title, h × w × d, `on wall` chip, remove). The `+` leaves the
-  bar. The bar shows the show's works, ten per page as today (1–9 0), `,` `.` page.
+- His 09-07 words: "I want to be able to upload artwork for both of us on the online version and it to stay there."
+  So the app is the loader. Settings › **art** (our door only): the drop box (the AddPanel that is on the bar today,
+  unchanged inside: drop, title, h w d in cm) and the library list (thumb, title, h × w × d, `on wall` chip, remove).
+  The `+` leaves the bar. The bar shows the show's works, ten per page as today (1–9 0), `,` `.` page.
+- **Where it lives**: the store. The image goes up as it is dropped: resized in the browser to 2048 px on the long side
+  (JPEG 88, PNG kept if it has alpha), plus a 240 px thumb, `PUT /art/<id>` (the file, R2 bucket `shdw-world-art`) and
+  `PUT /art/<id>/meta` (title, kind, h w d, edge, D1 table `art`). Every visitor's library = the repo's `art/index.json`
+  (the built-ins: YOZO vol 2) + `GET /art` from the store. Images are served by the Worker from R2 at `/art/<id>.jpg`
+  and `/art/<id>.thumb.jpg`, cached a year (the id changes when the file changes). A sculpture (GLB, prepared as today)
+  goes up the same way, its thumb drawn in the browser as today.
+- **Remove** (settings › art › remove): refused while the work is on a wall (as today); otherwise `DELETE /art/<id>`, a
+  history row, gone for everyone within the 10 s tick (`GET /show` carries the library's version too).
+- IndexedDB is no longer part of the show: a drop goes to the store, or, when the store is away, waits in the pending
+  queue with the image kept in IndexedDB until it lands.
 - Public door: nothing here. A visitor never sees the library, only the works on the walls.
 
 ## 6. Post-its
 
-- A post-it is a small square work, **7.6 × 7.6 cm**, one colour per person (SHDW: `#ffe45c` yellow, YOZO: `#ff8fb1`
-  pink; OPEN, his call), the text written on it in the WORLD theme's hand (Nunito, ink, 5 lines of ~16 characters,
+- A post-it is a small square work, **7.6 × 7.6 cm**, one colour per person (his 09-07: SHDW red `#e5484d`, YOZO blue
+  `#4d7cff`), the text written on it in the WORLD theme's hand (Nunito, ink, 5 lines of ~16 characters,
   smaller if longer, up to 140 characters), a tiny turned corner at the bottom right, a soft shadow on the wall. Cute.
 - **Leaving one** (our door): the last slot of the bar is the post-it (its icon: a blank square in your colour). Pick it
   (0, or click the slot): a small field opens under the crosshair, the mouse free as in the ring: type, `enter`. The
@@ -131,15 +135,22 @@ remembers the door in this browser: open it once, it stays open on this machine 
 - **S1 the store**: the Worker + D1 live on his account, `store.ts`, the show reads from and writes to it from our
   door; the door itself (§3); the public door look-only (§2). Proof: SHDW hangs a work in one browser, it stands in
   another browser within 10 s; the public door shows it and cannot touch it.
-- **S2 the artwork in the repo**: `art/prep_library.py`, his show loaded (he gives the originals and sizes), add art
-  moved into settings, the `+` off the bar.
+- **S2 the artwork in the store**: R2 bucket + the `art` table, upload from settings › art, the library for every
+  visitor from the store, add art off the bar.
 - **S3 post-its**: the note slot, the field, the drawn note, the ring, hidden in public.
 - **S4 history**: the list.
 
 ## 10. Open questions (his word before the gate that needs it)
 
-1. Post-it colours: SHDW yellow `#ffe45c`, YOZO pink `#ff8fb1`? (S3)
-2. Post-its in the public door: hidden (spec) or shown? (S3)
-3. The artwork: originals + sizes in a folder, or the saved file from your browser? (S2)
-4. The Worker's public address: `shdw-world-show.<his subdomain>.workers.dev` as Cloudflare gives it, or a name on a
-   domain of his? (S1; the workers.dev one is free and enough)
+1. Post-its in the public door: hidden (spec) or shown? (S3)
+2. The Worker's address: `https://shdw-world-show.shdwart.workers.dev` (S1 built on it; a domain of his later if he says).
+
+## 11. S1 as built (09-07)
+
+- Worker `shdw-world-show` + D1 `shdw-world` live on his account (`worker/`), schema applied, the store URL in
+  `web/src/world/store.ts`. The door: settings › the door, the word + SHDW / YOZO; wrong word shakes and says so.
+  Public: controls + the door only, no bar, no hands, no rings, E only opens the room's doors, a work shows its name.
+- Proven: the pane (SHDW, the door) put a sculpture in the store; his Chrome (public) showed it on open; the pane took it
+  down; his Chrome dropped it within the tick, untouched. The word on the store is a placeholder until he sets his own
+  (`npx.cmd wrangler secret put DOOR` from `worker/`).
+- Not yet: dropped art is still per browser until S2, so a painting SHDW drops does not show for YOZO yet.

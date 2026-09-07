@@ -1,5 +1,6 @@
 // P4 gate 1: the library, hold-walk-look-click hanging, the HANG widget, layouts (docs/ART.md §1-4, §6).
 import * as THREE from 'three'
+import { strip, type Store, type ShowItem } from '../store'
 import { type Level, type Wall, wallLength, wallDir, wallPoint, floorOf } from '../room/level'
 import type { Walker } from '../walk'
 import type { Loader } from '../loader'
@@ -51,6 +52,8 @@ export class ArtSystem {
   held: ArtItem | null = null
   selected: string | null = null                 // a hung work picked with Tab: glows, takes delete / arrows / e
   hands = true                                    // the held work shows in your hands until a wall takes it (H toggles)
+  store: Store | null = null                      // SHOW.md §4: the show's truth; null = a read-only view (?layout=)
+  private synced = new Map<string, string>()      // id → the item as the store last had it
   static REACH = 1.8                              // metres: walk up to it (owner 09-06: touch only when closer)
   mode: 'walk' | 'hang' | 'level' = 'walk'
   preview: Preview = { hit: null, u0: 0, top: 0, ok: false, why: '' }
@@ -253,7 +256,42 @@ export class ArtSystem {
   private restore(s: string): void { const j = JSON.parse(s); this.layout.items = j.items; this.layout.guides = j.guides; this.rebuild(); this.autosave(); this.onChange?.() }
   doUndo(): boolean { const s = this.undo.pop(); if (!s) return false; this.redo.push(this.snapshot()); this.restore(s); return true }
   doRedo(): boolean { const s = this.redo.pop(); if (!s) return false; this.undo.push(this.snapshot()); this.restore(s); return true }
-  autosave(): void { try { localStorage.setItem(DRAFT_KEY, JSON.stringify(this.layout)) } catch { /* private */ } }
+  autosave(): void { try { localStorage.setItem(DRAFT_KEY, JSON.stringify(this.layout)) } catch { /* private */ } this.sync() }
+  /** SHOW.md §4: every change goes to the store per item, from the diff against what the store last had */
+  private sync(): void {
+    if (!this.store?.open) return
+    const seen = new Set<string>()
+    for (const p of this.layout.items) {
+      seen.add(p.id); const j = JSON.stringify(strip(p))
+      if (this.synced.get(p.id) !== j) { this.synced.set(p.id, j); this.store.put(p) }
+    }
+    for (const id of [...this.synced.keys()]) if (!seen.has(id)) { this.synced.delete(id); this.store.del(id) }
+  }
+  /** the store's show replaces this browser's: on open, and after the door */
+  setShow(items: ShowItem[]): void {
+    this.synced.clear()
+    // an empty store and a room already hung in this browser, with the door open: this browser's show becomes the store's
+    if (!items.length && this.layout.items.length && this.store?.open) { this.sync(); this.onChange?.(); return }
+    this.layout.items = items.map((p) => { const s = strip(p); this.synced.set(s.id, JSON.stringify(s)); return s })
+    this.rebuild(); try { localStorage.setItem(DRAFT_KEY, JSON.stringify(this.layout)) } catch { /* private */ } this.onChange?.()
+  }
+  /** the 10 s tick: what the other person did comes in; my own echoes and my in-flight edits are left alone */
+  applyShow(items: ShowItem[], deleted: string[]): boolean {
+    let changed = false
+    for (const raw of items) {
+      const s = strip(raw), j = JSON.stringify(s)
+      if (this.synced.get(s.id) === j || this.store?.hasPending(s.id)) continue
+      const i = this.layout.items.findIndex((p) => p.id === s.id)
+      if (i >= 0) this.layout.items[i] = s; else this.layout.items.push(s)
+      this.synced.set(s.id, j); changed = true
+    }
+    for (const id of deleted) {
+      if (!this.synced.has(id) || this.store?.hasPending(id)) continue
+      this.layout.items = this.layout.items.filter((p) => p.id !== id); this.synced.delete(id); changed = true
+    }
+    if (changed) { this.rebuild(); try { localStorage.setItem(DRAFT_KEY, JSON.stringify(this.layout)) } catch { /* private */ } this.onChange?.() }
+    return changed
+  }
   /** the file Yozo sends back: the layout plus every local image it uses (data URLs), under 2 MB each */
   exportFile(): { name: string; json: string; skipped: string[] } {
     const used = new Set(this.layout.items.map((p) => p.art))
@@ -276,7 +314,7 @@ export class ArtSystem {
     this.rebuild(); this.autosave(); this.onChange?.()
     return { works: this.layout.items.length, art: added }
   }
-  clearDraft(): void { this.commit(); this.layout.items = []; this.rebuild(); this.autosave(); this.onChange?.() }
+  clearDraft(): void { this.commit(); this.layout.items = []; if (this.store?.open) { this.store.clear(); this.synced.clear() } this.rebuild(); this.autosave(); this.onChange?.() }
   setGuides(patch: Partial<Guides>): void {
     this.commit()
     Object.assign(this.layout.guides, patch)

@@ -7,6 +7,8 @@ export type ToastKind = 'ok' | 'warn' | 'bad'
 export type Quality = 'full' | 'balanced' | 'low'
 export type FxKey = 'lut' | 'sky' | 'plants' | 'glass' | 'surface' | 'outline' | 'dither' | 'smaa'
 export type FxState = Record<FxKey, boolean>
+export type Who = 'SHDW' | 'YOZO'
+
 export interface PlaySettings { sensitivity: number; fov: number; reduceMotion: boolean; headBob: boolean }
 
 
@@ -45,6 +47,10 @@ export interface Events {
   // ui → world
   menu_close: Record<string, never>
   menu_open: Record<string, never>
+  door_state: { open: boolean; who: Who | null }      // SHOW.md §3: the door in this browser
+  door_check: { key: string; who: Who }
+  door_result: { ok: boolean; error?: string }
+  door_leave: Record<string, never>
   set_play: { patch: Partial<PlaySettings> }
   touch_action: { action: TouchAction }
   set_look: { look: Look }

@@ -15,6 +15,7 @@ import { ArtSystem } from './art/art'
 import { Anchors } from './anchors'
 import { Looks } from './looks'
 import { Intro } from './intro'
+import { Store, TICK_MS } from './store'
 
 // three-mesh-bvh: the room's static geometry gets a BVH; raycasts against it are the accelerated kind
 THREE.BufferGeometry.prototype.computeBoundsTree = computeBoundsTree
@@ -104,6 +105,8 @@ export async function startWorld(container: HTMLElement, base: string): Promise<
   input.onLockChange = (on) => walker.setLocked(on)
   walker.onLevelStep = () => feel.dip(walker.dip, 0.03)
   const art = new ArtSystem(level, scene, walker, camera, DATA, loader)
+  const store = new Store()                          // SHOW.md §4: the show's truth
+  const ours = (): boolean => store.open           // the door is open in this browser: the bar, the hands, the rings; else look only
   art.feel = feel
   art.occluder = occluder
   art.floorRay = (origin, dir, far) => { bvhRay.origin.copy(origin); bvhRay.direction.copy(dir); const h = roomBVH.raycastFirst(bvhRay, THREE.DoubleSide, 0, far); return h && h.face ? { point: h.point, ny: Math.abs(h.face.normal.y), dist: h.distance } : null }
@@ -137,6 +140,9 @@ export async function startWorld(container: HTMLElement, base: string): Promise<
   }
   art.onChange = artSnapshot
   await art.load()
+  // the share link (?layout=) is a read-only view: no store, no writes; otherwise the store's show replaces this browser's
+  if (new URLSearchParams(location.search).get('layout')) art.store = null
+  else { art.store = store; const show = await store.load(); if (show) art.setShow(show) }
   artSnapshot()
   walker.onChange = () => art.onLevelChange()
 
@@ -161,7 +167,10 @@ export async function startWorld(container: HTMLElement, base: string): Promise<
     bus.on('set_eye', ({ cm }) => { if (cm >= 100 && cm <= 220) { level.eyeHeight = cm / 100; bus.toast(`eye height ${cm} cm`) } }),
     bus.on('accent', ({ css }) => setWireColor(built.wire, css)),
     bus.on('world_ready', () => setWireColor(built.wire, getComputedStyle(document.documentElement).getPropertyValue('--accent').trim() || '#66BDE6')),
+    bus.on('door_check', async ({ key, who }) => { const r = await store.check(key, who); bus.emit('door_result', r); if (r.ok && art.store) { const show = await store.load(); if (show) art.setShow(show); artSnapshot() } }),
+    bus.on('door_leave', () => { store.leave(); art.hold(null); closeTouch(); artSnapshot() }),
     bus.on('hold', ({ id }) => {
+      if (!ours()) return
       const a = id ? art.library.find((x) => x.id === id) ?? null : null
       if (a && art.isPlaced(a.id)) { bus.toast(`${a.title} is on the wall · walk up to it and press e`, 'warn'); return }
       if (a && art.held?.id === a.id) { art.hold(null); bus.toast('put back'); return }
@@ -234,6 +243,8 @@ export async function startWorld(container: HTMLElement, base: string): Promise<
     if (verb === 'back') { if (menuOpen) closeMenu(); else if (bigShown) showMap(false); else if (touch) closeTouch(); return }
     if (menuOpen) { if (verb === 'menu') closeMenu(); return }
     if (bigShown) { if (verb === 'menu' || verb === 'map') showMap(false); return }
+    // the public door (SHOW.md §2): walk, look, the room's doors, the map, settings. Nothing moves.
+    if (!ours()) { if (verb === 'touch') { if (!toggleDoor()) bus.toast('nothing to touch here', 'warn') } else if (verb === 'menu') openMenu(); else if (verb === 'map') showMap(true); else if (verb === 'debug') bus.emit('debug_toggle', {}); return }
     switch (verb) {
       case 'menu': openMenu(); break
       case 'keys': openMenu('keys'); break
@@ -267,7 +278,7 @@ export async function startWorld(container: HTMLElement, base: string): Promise<
     void e
   }
   input.onSlot = (n) => {
-    if (menuOpen) return
+    if (menuOpen || !ours()) return
     if (touch) { bus.emit('ring_key', { n }); return }
     const a = art.library[n]; if (!a) { return }
     bus.emit('hold', { id: a.id })
@@ -310,6 +321,8 @@ export async function startWorld(container: HTMLElement, base: string): Promise<
   let elapsed = 0
   const tv = new THREE.Vector3()
   const STEP = 1 / 120; let acc = 0
+  // SHOW.md §4: every 10 s, send what waits and bring in what the other person did
+  const tick = window.setInterval(async () => { const d = await store.tick(); if (d && art.store && art.applyShow(d.items, d.deleted)) artSnapshot() }, TICK_MS)
   renderer.start((dt) => {
     elapsed += dt; looks.update(elapsed)
     // fixed step (GAME.md §1): the walker moves in 1/120 s steps, the camera blends between the last two
@@ -360,7 +373,7 @@ export async function startWorld(container: HTMLElement, base: string): Promise<
     intro.update(elapsed, looks.void.flash, looks.void.flashAt)
     // anchors: the wall widget rides the ghost; a touchable work carries its prompt
     anchors.set('hang-widget', locked && art.held?.kind === 'painting' && art.preview.hit ? art.preview.hit.point : null)
-    if (lookAt && !touch) { const a = art.library.find((x) => x.id === lookAt.art); const pf = floorOf(level, lookAt.level).floorY; const w = level.walls.find((x) => x.id === lookAt.wall); if (a && w && lookAt.kind === 'painting') { const [dx, dz] = [w.b[0] - w.a[0], w.b[1] - w.a[1]]; const L = Math.hypot(dx, dz) || 1; const uc = lookAt.u + a.w / 200; anchors.set('work', new THREE.Vector3(w.a[0] + dx / L * uc, pf + lookAt.topY + 0.08, w.a[1] + dz / L * uc), 'touch') } else if (a && lookAt.pos) anchors.set('work', new THREE.Vector3(lookAt.pos[0], lookAt.pos[1] + a.h / 100 + (lookAt.plinth?.h ?? 0) / 100 + 0.1, lookAt.pos[2]), 'touch') }
+    if (lookAt && !touch) { const a = art.library.find((x) => x.id === lookAt.art); const pf = floorOf(level, lookAt.level).floorY; const w = level.walls.find((x) => x.id === lookAt.wall); if (a && w && lookAt.kind === 'painting') { const [dx, dz] = [w.b[0] - w.a[0], w.b[1] - w.a[1]]; const L = Math.hypot(dx, dz) || 1; const uc = lookAt.u + a.w / 200; anchors.set('work', new THREE.Vector3(w.a[0] + dx / L * uc, pf + lookAt.topY + 0.08, w.a[1] + dz / L * uc), ours() ? 'touch' : a.title) } else if (a && lookAt.pos) anchors.set('work', new THREE.Vector3(lookAt.pos[0], lookAt.pos[1] + a.h / 100 + (lookAt.plinth?.h ?? 0) / 100 + 0.1, lookAt.pos[2]), ours() ? 'touch' : a.title) }
     else anchors.set('work', null)
     const sz = renderer.size; anchors.publish(camera, sz.x, sz.y)
   })
@@ -395,6 +408,7 @@ export async function startWorld(container: HTMLElement, base: string): Promise<
 
   const dispose = () => {
     for (const off of offs) off()
+    clearInterval(tick)
     input.onVerb = null; input.onLook = null; input.onSlot = null; input.onArrow = null; input.onWheel = null
     renderer.active = false; loader.dispose(); renderer.gl.dispose()
   }

@@ -1,5 +1,5 @@
 // UI state (REMAKE.md §2, GAME-UI): what the HTML layer knows, fed by the bus. Svelte 5 runes. The UI never imports world/.
-import { bus, type Look, type RoomInfo, type WalkSnapshot, type HudSnapshot, type ArtSnapshot, type LoaderState, type ToastKind, type FxState, type Quality, type TouchSnapshot, type PlaySettings } from '../bus'
+import { bus, type Who, type Look, type RoomInfo, type WalkSnapshot, type HudSnapshot, type ArtSnapshot, type LoaderState, type ToastKind, type FxState, type Quality, type TouchSnapshot, type PlaySettings } from '../bus'
 
 export interface Toast { id: number; msg: string; kind: ToastKind }
 
@@ -28,6 +28,8 @@ export const ui = $state({
   slotRing: null as { id: string; x: number; y: number; title: string; local: boolean; placed: boolean } | null,
   repo: { url: '', error: '' },
   entered: false,
+  door: { open: false, who: null as Who | null },
+  doorError: '',
 })
 
 let toastSeq = 0
@@ -45,6 +47,8 @@ bus.on('menu', ({ show, tab }) => { ui.menuShown = show; if (tab) ui.menuTab = t
 bus.on('touch', ({ touch }) => { ui.touch = touch; ui.ringAim = null; ui.ringHot = null; if (!touch) ui.lookOpen = false })
 bus.on('ring_aim', (a) => { ui.ringAim = a })
 bus.on('repo_saved', (r) => { ui.repo = { url: r.url ?? '', error: r.error ?? '' } })
+bus.on('door_state', (d) => { ui.door = d; if (d.open) ui.doorError = '' })
+bus.on('door_result', (r) => { ui.doorError = r.ok ? '' : (r.error ?? 'wrong word') })
 let flashT = 0
 bus.on('widget_flash', ({ key }) => { ui.widgetFlash = key; clearTimeout(flashT); flashT = window.setTimeout(() => (ui.widgetFlash = null), 400) })
 bus.on('play', ({ settings }) => { ui.play = settings })

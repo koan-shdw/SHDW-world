@@ -45,17 +45,19 @@
   {#if ui.anchors['work']?.visible && !ui.touch}<div class="worklabel" style="left:{ui.anchors['work'].x}px; top:{ui.anchors['work'].y}px">{ui.anchors['work'].text}</div>{/if}
   <Ring {base} />
   <TouchMenu />
-  <WallWidget />
+  {#if ui.door.open}<WallWidget />{/if}
 </div>
 
 <img class="logo top" src="{base}brand/logo.png" alt="CULT 2026" />
 <button class="settings top" onclick={() => bus.emit('menu_open', {})} hidden={ui.menuShown}>settings</button>
 
-<div class="bottom" class:dim={!ui.hud.cross}>
-  <AddPanel bind:this={add} />
-  <Hotbar {base} onadd={() => add?.open()} />
-</div>
-<Hands {base} />
+{#if ui.door.open}
+  <div class="bottom" class:dim={!ui.hud.cross}>
+    <AddPanel bind:this={add} />
+    <Hotbar {base} onadd={() => add?.open()} />
+  </div>
+  <Hands {base} />
+{/if}
 
 <svelte:document onmousedown={outside} />
 <canvas class="minimap" bind:this={small}></canvas>
