@@ -48,7 +48,7 @@ export class Intro {
 
     // the word of god: Yozo's quote, fixed in the world 1.4 km out opposite the door, 1.9 km wide: a mountain, it never shifts
     const eye = floorY + 1.6
-    this.quote = new Text3D(YOZO_QUOTE, { width: 200, size: 7.5, shadow: 'rgba(0,0,0,.5)', lineHeight: 1.22, weight: 800, sheen: true })
+    this.quote = new Text3D(YOZO_QUOTE, { width: 200, size: 7.5, shadow: 'rgba(0,0,0,.5)', lineHeight: 1.22, weight: 700, sheen: true, font: "'Helvetica Neue', Helvetica, Arial, sans-serif" })   // Helvetica (owner 09-07)
     const K = 9.5
     this.quote.mesh.position.set(150 * K, eye + 62 * K, 1.0); this.quote.mesh.rotation.y = -Math.PI / 2; this.quote.mesh.scale.setScalar(K)
     this.quote.opacity = 0.62

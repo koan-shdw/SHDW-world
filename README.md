@@ -2,7 +2,7 @@
 
 Hang real artworks, at real size, on the walls of a LiDAR-scanned gallery. Walk it in the browser.
 
-Live: https://koan-shdw.github.io/koan-hang/
+Live: https://koan-shdw.github.io/SHDW-world/
 
 Spec: `docs/SPEC.md`. Scan facts: `docs/SCAN-REPORT.md`.
 

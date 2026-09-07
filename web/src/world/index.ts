@@ -294,7 +294,7 @@ export async function startWorld(container: HTMLElement, base: string): Promise<
   // token save (ART.md §4, the owner's path): layouts/<name>.json into the repo through the GitHub contents API
   bus.on('repo_save', ({ name, token }) => {
     const f = art.exportFile(); const path = `layouts/${(name || art.layout.name || 'layout').replace(/[^a-z0-9_-]+/gi, '-').toLowerCase()}.json`
-    const api = `https://api.github.com/repos/koan-shdw/koan-hang/contents/${path}`
+    const api = `https://api.github.com/repos/koan-shdw/SHDW-world/contents/${path}`
     const headers = { Authorization: `Bearer ${token}`, Accept: 'application/vnd.github+json', 'Content-Type': 'application/json' }
     const body = (sha?: string) => JSON.stringify({ message: `layout: ${path}`, content: btoa(unescape(encodeURIComponent(f.json))), sha })
     fetch(api, { headers }).then((r) => (r.ok ? r.json() : null)).then((cur) => fetch(api, { method: 'PUT', headers, body: body(cur?.sha) }))

@@ -1,7 +1,7 @@
 # KOAN.hang — SPEC v2 (2026-09-02)
 
-**KOAN.hang**. Repo `C:\Claude\gallery-hang` → github.com/koan-shdw/koan-hang → live at
-https://koan-shdw.github.io/koan-hang/. v1 kept as `docs/SPEC-v1.md`.
+**KOAN.hang**. Repo `C:\Claude\gallery-hang` → github.com/koan-shdw/SHDW-world → live at
+https://koan-shdw.github.io/SHDW-world/. v1 kept as `docs/SPEC-v1.md`.
 
 The brief (user, 2026-09-02): a 3D game-style walk through his gallery. An inventory of his
 artworks at true size. Place a work on a wall, walk round, look at it. An in-game widget sets

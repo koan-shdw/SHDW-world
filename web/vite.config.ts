@@ -75,7 +75,7 @@ const APP_VERSION = `${process.env.npm_package_version ?? '0.2.0'} ${(process.en
 
 export default defineConfig({
   // served at koan-shdw.github.io/koan-hang/ in production (CI is set on Actions)
-  base: process.env.CI ? '/koan-hang/' : '/',
+  base: process.env.CI ? '/SHDW-world/' : '/',
   server: { port: 5374, strictPort: true },
   define: { __APP_VERSION__: JSON.stringify(APP_VERSION) },
   plugins: [svelte(), dataDirs()],
