@@ -17,6 +17,10 @@
   const mine = (a: NonNullable<typeof ui.art>['library'][number]) => !!(a.store || a.data?.startsWith('data:') || a.model?.startsWith('data:'))
   const onlyHere = $derived((ui.art?.library ?? []).filter((a) => !a.store && mine(a)))
   const pushAll = () => { for (const a of onlyHere) bus.emit('push_local', { id: a.id }) }
+  let editing = $state<string | null>(null)
+  let form = $state({ title: '', h: 0, w: 0, d: 0 })
+  const editArt = (a: NonNullable<typeof ui.art>['library'][number]) => { if (editing === a.id) { editing = null; return } editing = a.id; form = { title: a.title, h: a.h, w: a.w, d: a.d } }
+  const saveArt = () => { if (!editing) return; bus.emit('update_art', { id: editing, patch: { title: form.title, h: Number(form.h), w: Number(form.w), d: Number(form.d) } }); editing = null }
   const removeArt = (a: NonNullable<typeof ui.art>['library'][number]) => { if (confirm(`remove ${a.title} from the library, for everyone?`)) bus.emit('remove_local', { id: a.id }) }
   $effect(() => { if (!tabs.includes(ui.menuTab)) ui.menuTab = 'controls' })
   let eye = $state(160)
@@ -66,9 +70,19 @@
               <div class="artrow">
                 {#if thumbOf(a)}<img class="thumb" src={thumbOf(a)} alt={a.title} />{:else}<div class="thumb model">…</div>{/if}
                 <div class="who"><b>{a.title}</b><span class="num">{a.h} × {a.w} × {a.d} cm</span>{#if ui.art?.placed[a.id]}<span class="tag">{a.kind === 'sculpture' ? 'placed' : 'on wall'}</span>{/if}{#if !mine(a)}<span class="tag">built in</span>{/if}{#if !a.store && mine(a)}<span class="tag">this browser only</span>{/if}</div>
+                {#if mine(a)}<button class="chip" class:on={editing === a.id} onclick={() => editArt(a)}>edit</button>{/if}
                 {#if !a.store && mine(a)}<button class="chip" onclick={() => bus.emit('push_local', { id: a.id })}>to the store</button>{/if}
                 <button class="chip" disabled={!mine(a) || !!ui.art?.placed[a.id]} onclick={() => removeArt(a)}>remove</button>
               </div>
+              {#if editing === a.id}
+                <div class="artrow edit">
+                  <input type="text" placeholder="title" bind:value={form.title} onkeydown={(e) => { if (e.key === 'Enter') saveArt() }} />
+                  <input type="number" placeholder="h cm" bind:value={form.h} onkeydown={(e) => { if (e.key === 'Enter') saveArt() }} />
+                  <input type="number" placeholder="w cm" bind:value={form.w} onkeydown={(e) => { if (e.key === 'Enter') saveArt() }} />
+                  <input type="number" placeholder="d cm" bind:value={form.d} onkeydown={(e) => { if (e.key === 'Enter') saveArt() }} />
+                  <button class="chip" onclick={saveArt}>save</button>
+                </div>
+              {/if}
             {/each}
           </div>
         {:else if ui.menuTab === 'file'}

@@ -61,6 +61,7 @@ export class ArtSystem {
   storeArt: ArtItem[] = []                        // SHOW.md §5: the works uploaded on the site, for everyone
   private artSeen = new Map<string, number>()     // id → ts of the store's art as this browser has it
   static REACH = 1.8                              // metres: walk up to it (owner 09-06: touch only when closer)
+  static SNAP = 1.5                               // metres: a held painting stays in your hands until the wall is this close (owner 09-07)
   mode: 'walk' | 'hang' | 'level' = 'walk'
   preview: Preview = { hit: null, u0: 0, top: 0, ok: false, why: '' }
   onChange: (() => void) | null = null          // library or layout changed: cards redraw
@@ -181,6 +182,24 @@ export class ArtSystem {
     this.local = this.local.filter((a) => a.id !== id); this.library = this.library.filter((a) => a.id !== id)
     this.layout.items = this.layout.items.filter((p) => p.art !== id)
     await idbSet('items', this.local); this.rebuild(); this.autosave(); this.onChange?.()
+  }
+  /** a store work as the store describes it, from what this browser holds */
+  private toMeta(a: ArtItem): ArtMeta {
+    const { data, model, thumb, store, note, ...rest } = a; void store; void note
+    const src = a.kind === 'sculpture' ? model : data
+    return { ...(rest as Omit<ArtItem, 'store'>), ext: src?.split('?')[0].split('.').pop() ?? (a.kind === 'sculpture' ? 'glb' : 'jpg'), hasThumb: !!thumb }
+  }
+  /** owner 09-07: title and size of an uploaded work change for everyone; a browser-only work changes here */
+  async updateArt(id: string, patch: { title?: string; h?: number; w?: number; d?: number }): Promise<ArtItem> {
+    const a = this.library.find((x) => x.id === id); if (!a) throw new Error('not in the library')
+    const clean: Partial<ArtItem> = {}
+    if (patch.title !== undefined && patch.title.trim()) clean.title = patch.title.trim()
+    for (const k of ['h', 'w', 'd'] as const) { const v = patch[k]; if (v !== undefined && Number.isFinite(v) && v >= 0 && (k === 'd' || v > 0)) clean[k] = v }
+    if (a.store) { if (!this.store?.open) throw new Error('the door'); await this.store.updateArt(id, { ...this.toMeta(a), ...clean }); Object.assign(a, clean); this.artSeen.set(id, Date.now()) }
+    else if (this.local.some((x) => x.id === id)) { Object.assign(a, clean); await idbSet('items', this.local) }
+    else throw new Error('built in, it stays')
+    this.rebuild(); this.autosave(); this.onChange?.()
+    return a
   }
   updateLocal(id: string, patch: Partial<ArtItem>): void {
     const a = this.library.find((x) => x.id === id); if (!a) return
@@ -473,7 +492,7 @@ export class ArtSystem {
       const denom = dir.x * n[0] + dir.z * n[1]
       if (denom >= -1e-6) continue   // the face must look at us
       const t = ((w.a[0] - o.x) * n[0] + (w.a[1] - o.z) * n[1]) / denom
-      if (t <= 0 || t > 12) continue
+      if (t <= 0 || t > ArtSystem.SNAP) continue
       const p = new THREE.Vector3(o.x + dir.x * t, o.y + dir.y * t, o.z + dir.z * t)
       const [dx, dz] = wallDir(w); const L = wallLength(w)
       const u = (p.x - w.a[0]) * dx + (p.z - w.a[1]) * dz

@@ -50,6 +50,7 @@ export interface Events {
   menu_open: { tab?: string }
   drop_files: { files: File[] }
   push_local: { id: string }
+  update_art: { id: string; patch: { title?: string; h?: number; w?: number; d?: number } }   // owner 09-07: edit an uploaded work's title and size
   note_open: Record<string, never>                     // SHOW.md §6: the note slot: open the field
   note_field: { show: boolean }                        // world → UI: the field under the crosshair
   note_text: { text: string }                          // UI → world: enter: the note is in your hands

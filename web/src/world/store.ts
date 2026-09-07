@@ -95,6 +95,12 @@ export class Store {
     if (!m.ok) throw new Error(`the store said ${m.status}`)
     return full
   }
+  /** the meta again under the same id: title, size; the file stays */
+  async updateArt(id: string, meta: ArtMeta): Promise<void> {
+    if (!this.door) throw new Error('the door')
+    const r = await fetch(`${STORE}/art/${encodeURIComponent(id)}`, { method: 'PUT', headers: this.headers(), body: JSON.stringify({ ...meta, id }) })
+    if (!r.ok) throw new Error(`the store said ${r.status}`)
+  }
   async deleteArt(id: string): Promise<void> {
     if (!this.door) throw new Error('the door')
     const r = await fetch(`${STORE}/art/${encodeURIComponent(id)}`, { method: 'DELETE', headers: this.headers() })

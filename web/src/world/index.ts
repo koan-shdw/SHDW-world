@@ -194,6 +194,7 @@ export async function startWorld(container: HTMLElement, base: string): Promise<
     bus.on('note_open', () => openNote()),
     bus.on('note_text', ({ text }) => closeNote(text)),
     bus.on('note_cancel', () => closeNote(null)),
+    bus.on('update_art', ({ id, patch }) => { void art.updateArt(id, patch).then((a) => bus.toast(`${a.title} · ${a.w} × ${a.h} × ${a.d} cm`)).catch((e) => bus.toast(`not changed · ${(e as Error).message}`, 'bad')) }),
     bus.on('push_local', ({ id }) => { void art.pushLocal(id).then((a) => bus.toast(`${a.title} is in the store`)).catch((e) => bus.toast(`not in the store · ${(e as Error).message}`, 'bad')) }),
     bus.on('remove_local', ({ id }) => { void art.removeLocal(id).catch((e) => bus.toast(`not removed · ${(e as Error).message}`, 'bad')) }),
     bus.on('set_guides', ({ patch }) => art.setGuides(patch)),
