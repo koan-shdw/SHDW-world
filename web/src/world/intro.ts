@@ -1,6 +1,6 @@
 // The intro (owner 09-06/07): you start on the far square of the yard. The CULT letters float 10 cm off the red wall under a
 // spotlight that breathes and flickers and throws their shadow. Yozo's words stand opposite the door as a mountain: solid
-// upright letters 60 m tall, 400 m out, a column 820 m wide and 1.7 km tall standing on the ground that you crane your neck
+// upright letters 60 m tall, 400 m out, a column 900 m wide and 1.6 km tall starting below the ground that you crane your neck
 // at, lit by the light and the lightning (mountain.ts). Nothing else floats in the yard: he will instruct the rest.
 import * as THREE from 'three'
 import type { Level } from './room/level'
@@ -46,8 +46,8 @@ export class Intro {
     this.spot.castShadow = true; this.spot.shadow.mapSize.set(1024, 1024); this.spot.shadow.bias = -0.0005; this.spot.shadow.camera.near = 0.3; this.spot.shadow.camera.far = 8
     this.group.add(this.spot, this.spot.target)
 
-    // the word of god: Yozo's quote as a column 400 m out opposite the door, upright, its bottom line standing on the ground (the yard floor height), its top 77° up
-    this.mountain = new Mountain(YOZO_QUOTE, 400, floorY, base)
+    // the word of god: Yozo's quote as a column 400 m out opposite the door, upright, its bottom line 30 m below the yard floor (owner: start lower), its top 76° up
+    this.mountain = new Mountain(YOZO_QUOTE, 400, floorY - 30, base)
     this.group.add(this.mountain.group)
   }
 

@@ -1,6 +1,6 @@
 // The mountain (owner 09-07: "so far away and so big that it looks like it has perspective, a genuine mountain in the
 // distance, the colour illuminated by the lighting, not flat white"): Yozo's words as solid Helvetica letters cut deep like
-// stone, one upright column 400 m out opposite the door, 820 m wide and 1.7 km tall (owner: "MASSIVE MONUMENTAL GIGANTIC,
+// stone, one upright column 400 m out opposite the door, 900 m wide and 1.6 km tall (owner: "MASSIVE MONUMENTAL GIGANTIC,
 // you have to look up to see it"; "start on the ground, wrap shorter, taller"): the bottom line stands on the ground, the
 // top 77° up, hazed, into the clouds. Sized by the look-up angle, never to fit the screen. Lit by a cool key light, a slow
 // sweep, and the lightning.
@@ -10,7 +10,7 @@ import { TextGeometry } from 'three/examples/jsm/geometries/TextGeometry.js'
 import { mergeGeometries } from 'three/examples/jsm/utils/BufferGeometryUtils.js'
 
 export interface MountainOpts { width: number; size: number; depth: number; lean: number; lineHeight: number; paraGap: number }
-const DEFAULTS: MountainOpts = { width: 820, size: 60, depth: 17, lean: 0, lineHeight: 1.22, paraGap: 0.6 }   // owner: wrap short, a tall column
+const DEFAULTS: MountainOpts = { width: 900, size: 60, depth: 17, lean: 0, lineHeight: 1.22, paraGap: 0.6 }   // owner: wrap short, a tall column; then 10 % wider
 
 const vert = /* glsl */ `
 varying vec3 vW; varying vec3 vN; varying vec3 vL;
