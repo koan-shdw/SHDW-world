@@ -16,6 +16,7 @@ import { Anchors } from './anchors'
 import { Looks } from './looks'
 import { Intro } from './intro'
 import { Store, TICK_MS } from './store'
+import { ensureNoteFont } from './art/note'
 
 // three-mesh-bvh: the room's static geometry gets a BVH; raycasts against it are the accelerated kind
 THREE.BufferGeometry.prototype.computeBoundsTree = computeBoundsTree
@@ -106,6 +107,7 @@ export async function startWorld(container: HTMLElement, base: string): Promise<
   walker.onLevelStep = () => feel.dip(walker.dip, 0.03)
   const art = new ArtSystem(level, scene, walker, camera, DATA, loader)
   const store = new Store()                          // SHOW.md §4: the show's truth
+  ensureNoteFont()
   const ours = (): boolean => store.open           // the door is open in this browser: the bar, the hands, the rings; else look only
   art.feel = feel
   art.occluder = occluder
@@ -136,7 +138,7 @@ export async function startWorld(container: HTMLElement, base: string): Promise<
     const placed: Record<string, number> = {}
     for (const p of art.layout.items) placed[p.art] = (placed[p.art] ?? 0) + 1
     const f = art.focus()
-    bus.emit('art_state', { library: art.library, held: art.held?.id ?? null, layout: art.layout, selected: art.selected, placed, hands: art.hands, focus: f ? { art: f.art.id, placed: f.placed?.id ?? null, look: art.lookOf(f.art, f.placed), parts: art.partNames(f.art) } : null })
+    bus.emit('art_state', { library: art.library, held: art.held?.id ?? null, heldItem: art.held ?? null, layout: art.layout, selected: art.selected, placed, hands: art.hands, focus: f ? { art: f.art.id, placed: f.placed?.id ?? null, look: art.lookOf(f.art, f.placed), parts: art.partNames(f.art) } : null })
   }
   art.onChange = artSnapshot
   await art.load()
@@ -188,6 +190,9 @@ export async function startWorld(container: HTMLElement, base: string): Promise<
       const go = store.open && art.store ? art.addStore(item).catch((e) => { bus.toast(`not in the store · ${(e as Error).message} · kept in this browser only`, 'warn'); return art.addLocal(item) }) : art.addLocal(item)
       void go.then((a) => bus.toast(`${a.title} · ${a.w} × ${a.h} × ${a.d} cm in the library`))
     }),
+    bus.on('note_open', () => openNote()),
+    bus.on('note_text', ({ text }) => closeNote(text)),
+    bus.on('note_cancel', () => closeNote(null)),
     bus.on('push_local', ({ id }) => { void art.pushLocal(id).then((a) => bus.toast(`${a.title} is in the store`)).catch((e) => bus.toast(`not in the store · ${(e as Error).message}`, 'bad')) }),
     bus.on('remove_local', ({ id }) => { void art.removeLocal(id).catch((e) => bus.toast(`not removed · ${(e as Error).message}`, 'bad')) }),
     bus.on('set_guides', ({ patch }) => art.setGuides(patch)),
@@ -223,7 +228,7 @@ export async function startWorld(container: HTMLElement, base: string): Promise<
   const openMenu = (tab?: string) => { if (menuOpen) return; menuOpen = true; closeTouch(); input.release(); bus.emit('menu', { show: true, tab }) }
   const closeMenu = () => { if (!menuOpen) return; menuOpen = false; bus.emit('menu', { show: false }); void input.lock() }
   let ringKind: 'actions' | 'look' = 'actions'
-  const touchSnap = (p: Placed) => { const a = art.library.find((x) => x.id === p.art); return { placed: p.id, kind: p.kind, title: a?.title ?? 'work', size: a ? `${a.w} × ${a.h} × ${a.d} cm` : '', ring: ringKind } }
+  const touchSnap = (p: Placed) => { const a = art.artOf(p.art); return { placed: p.id, kind: p.kind, title: p.note ? `post-it · ${p.note.who}` : a?.title ?? 'work', size: a ? `${a.w} × ${a.h} × ${a.d} cm` : '', ring: ringKind, note: !!p.note } }
   const openTouch = (p: Placed, ring: 'actions' | 'look' = 'actions') => { ringKind = ring; touch = p; walker.frozen = true; art.selected = p.id; artSnapshot(); bus.emit('touch', { touch: touchSnap(p) }); const sz = renderer.size; input.openRing(sz.x / 2, sz.y / 2) }
   const closeTouch = () => { if (!touch) return; touch = null; walker.frozen = false; art.selected = null; anchors.set('touch', null); artSnapshot(); input.closeRing(); bus.emit('touch', { touch: null }) }
   const touchAction = (action: TouchAction) => {
@@ -245,6 +250,7 @@ export async function startWorld(container: HTMLElement, base: string): Promise<
     if (art.held) { art.hold(null); bus.toast('put back in the bar'); return }
   }
   input.onVerb = (verb: Verb, e) => {
+    if (noteOpen) { if (verb === 'back') closeNote(null); return }
     if (verb === 'back') { if (menuOpen) closeMenu(); else if (bigShown) showMap(false); else if (touch) closeTouch(); return }
     if (menuOpen) { if (verb === 'menu') closeMenu(); return }
     if (bigShown) { if (verb === 'menu' || verb === 'map') showMap(false); return }
@@ -282,9 +288,14 @@ export async function startWorld(container: HTMLElement, base: string): Promise<
     }
     void e
   }
+  // SHOW.md §6: the note slot (0): the field opens under the crosshair, the mouse free; enter = the note in your hands
+  let noteOpen = false
+  const openNote = () => { if (!ours() || menuOpen || noteOpen) return; closeTouch(); noteOpen = true; input.release(); bus.emit('note_field', { show: true }) }
+  const closeNote = (text: string | null) => { if (!noteOpen) return; noteOpen = false; bus.emit('note_field', { show: false }); if (text) { art.holdNote(text); artSnapshot() } void input.lock() }
   input.onSlot = (n) => {
     if (menuOpen || !ours()) return
     if (touch) { bus.emit('ring_key', { n }); return }
+    if (n === 9) { openNote(); return }
     const a = art.library[n]; if (!a) { return }
     bus.emit('hold', { id: a.id })
   }
@@ -378,7 +389,7 @@ export async function startWorld(container: HTMLElement, base: string): Promise<
     intro.update(elapsed, looks.void.flash, looks.void.flashAt)
     // anchors: the wall widget rides the ghost; a touchable work carries its prompt
     anchors.set('hang-widget', locked && art.held?.kind === 'painting' && art.preview.hit ? art.preview.hit.point : null)
-    if (lookAt && !touch) { const a = art.library.find((x) => x.id === lookAt.art); const pf = floorOf(level, lookAt.level).floorY; const w = level.walls.find((x) => x.id === lookAt.wall); if (a && w && lookAt.kind === 'painting') { const [dx, dz] = [w.b[0] - w.a[0], w.b[1] - w.a[1]]; const L = Math.hypot(dx, dz) || 1; const uc = lookAt.u + a.w / 200; anchors.set('work', new THREE.Vector3(w.a[0] + dx / L * uc, pf + lookAt.topY + 0.08, w.a[1] + dz / L * uc), ours() ? 'touch' : a.title) } else if (a && lookAt.pos) anchors.set('work', new THREE.Vector3(lookAt.pos[0], lookAt.pos[1] + a.h / 100 + (lookAt.plinth?.h ?? 0) / 100 + 0.1, lookAt.pos[2]), ours() ? 'touch' : a.title) }
+    if (lookAt && !touch) { const a = art.artOf(lookAt.art); const pf = floorOf(level, lookAt.level).floorY; const w = level.walls.find((x) => x.id === lookAt.wall); if (a && w && lookAt.kind === 'painting') { const [dx, dz] = [w.b[0] - w.a[0], w.b[1] - w.a[1]]; const L = Math.hypot(dx, dz) || 1; const uc = lookAt.u + a.w / 200; anchors.set('work', new THREE.Vector3(w.a[0] + dx / L * uc, pf + lookAt.topY + 0.08, w.a[1] + dz / L * uc), ours() ? (lookAt.note ? `${lookAt.note.who} · touch` : 'touch') : a.title) } else if (a && lookAt.pos) anchors.set('work', new THREE.Vector3(lookAt.pos[0], lookAt.pos[1] + a.h / 100 + (lookAt.plinth?.h ?? 0) / 100 + 0.1, lookAt.pos[2]), ours() ? 'touch' : a.title) }
     else anchors.set('work', null)
     const sz = renderer.size; anchors.publish(camera, sz.x, sz.y)
   })

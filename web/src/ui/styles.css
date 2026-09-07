@@ -191,6 +191,13 @@ input[type='color'] { width: 44px; height: 30px; padding: 0 2px; background: var
 .settings.top { position: absolute; right: 18px; top: 14px; z-index: 20; }
 .chip.who.shdw.on { background: #e5484d; color: #fff; }
 .chip.who.yozo.on { background: #4d7cff; color: #fff; }
+.slot.note .paper { display: block; width: 26px; height: 26px; margin: 0 auto; background: var(--note); border-radius: 2px; box-shadow: 2px 3px 6px rgba(15,15,15,.25); transform: rotate(-4deg); }
+.slot.note.held .paper { transform: rotate(4deg) scale(1.08); }
+.notefield { position: absolute; left: 50%; top: 50%; width: 260px; padding: 16px 16px 10px; background: var(--note); border-radius: 3px; box-shadow: 0 12px 30px rgba(15,15,15,.35); z-index: 30; transform: translate(-50%, -50%) rotate(-2deg); animation: notepop .25s var(--e-back); }
+@keyframes notepop { from { transform: translate(-50%, -50%) rotate(-2deg) scale(.85); opacity: 0; } to { transform: translate(-50%, -50%) rotate(-2deg) scale(1); opacity: 1; } }
+.notefield textarea { width: 100%; box-sizing: border-box; background: transparent; border: 0; outline: 0; resize: none; color: #1a1a1a; font: 700 17px/1.3 var(--sans); }
+.notefield textarea::placeholder { color: rgba(26,26,26,.45); }
+.notefield .num { font-size: 11px; color: rgba(26,26,26,.6); text-align: right; }
 .artlist { display: flex; flex-direction: column; gap: 6px; max-height: 40vh; overflow: auto; }
 .artrow { display: flex; align-items: center; gap: 10px; }
 .artrow .thumb { width: 44px; height: 44px; object-fit: cover; border-radius: 6px; border: var(--ink); background: var(--panel2); flex: none; }

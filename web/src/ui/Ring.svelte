@@ -34,6 +34,7 @@
     if (page === 'colour') return [...COLOURS.map(([n, c], i) => ({ id: `c:${c}`, label: n, colour: c, key: String(i + 1) })), { id: 'back', label: 'back', icon: 'back' as IconName, key: '9' }]
     if (page === 'material') return [...MATERIALS.map(([n, f], i) => ({ id: `m:${n}`, label: n, img: f ? `${base}data/textures/${f}` : undefined, icon: f ? undefined : ('cross' as IconName), key: String(i + 1) })), { id: 'upload', label: 'your image', icon: 'hand' as IconName, key: '9' }, { id: 'back', label: 'back', icon: 'back' as IconName, key: '0' }]
     if (page === 'look') return [{ id: 'colour', label: 'colour', colour: look?.colour ?? '#f2f2ee', key: '1' }, { id: 'material', label: 'material', icon: 'look', key: '2' }, ...(parts.length > 1 ? [{ id: 'parts', label: 'parts', icon: 'align' as IconName, key: '3' }] : []), { id: 'done', label: 'done', icon: 'cross', key: 'esc' }]
+    if (t.note) return [{ id: 'move', label: 'move', icon: 'hand', key: '1' }, { id: 'down', label: 'take down', icon: 'down', key: '2' }, { id: 'done', label: 'done', icon: 'cross', key: 'esc' }]
     return [
       { id: 'move', label: 'move', icon: 'hand', key: '1' },
       { id: 'down', label: 'take down', icon: 'down', key: '2' },

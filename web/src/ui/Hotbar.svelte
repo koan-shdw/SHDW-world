@@ -6,8 +6,11 @@
   const lib = $derived(ui.art?.library ?? [])
   const heldIndex = $derived(ui.art?.held ? lib.findIndex((a) => a.id === ui.art?.held) : -1)
   // more than ten works: the bar shows a window of ten that keeps the held slot in view
-  const start = $derived(lib.length <= 10 ? 0 : Math.max(0, Math.min(lib.length - 10, heldIndex - 5)))
-  const slots = $derived(Array.from({ length: 10 }, (_, i) => ({ i: start + i, a: lib[start + i] ?? null })))
+  // nine works in a window that keeps the held one in view; the tenth slot (0) is always the post-it (SHOW.md §6)
+  const start = $derived(lib.length <= 9 ? 0 : Math.max(0, Math.min(lib.length - 9, heldIndex - 4)))
+  const slots = $derived(Array.from({ length: 9 }, (_, i) => ({ i: start + i, a: lib[start + i] ?? null })))
+  const noteColour = $derived(ui.door.who === 'YOZO' ? '#4d7cff' : '#e5484d')
+  const noteHeld = $derived(ui.art?.held === 'note')
   const keyOf = (i: number) => (i < 9 ? String(i + 1) : i === 9 ? '0' : '')
   const thumb = (a: NonNullable<(typeof lib)[number]>) => a.kind === 'sculpture' ? a.thumb ?? '' : a.thumb ?? a.data ?? `${base}data/art/${a.file}`
   const mine = (a: NonNullable<(typeof lib)[number]>) => !!(a.store || a.data?.startsWith('data:') || a.model?.startsWith('data:'))   // the store's and this browser's leave; the repo's stay
@@ -38,5 +41,6 @@
         <button class="slot empty" onclick={onadd} title="empty · add art in settings"><span class="key">{keyOf(s.i)}</span></button>
       {/if}
     {/each}
+    <button class="slot note" class:held={noteHeld} style="--note: {noteColour}" onclick={() => bus.emit('note_open', {})} title="post-it · 0 · a note in your colour, stick it on a wall"><span class="key">0</span><span class="paper"></span></button>
   {/if}
 </div>

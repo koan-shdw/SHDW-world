@@ -29,6 +29,7 @@ export const ui = $state({
   repo: { url: '', error: '' },
   entered: false,
   door: { open: false, who: null as Who | null },
+  noteField: false,
   doorError: '',
 })
 
@@ -47,6 +48,7 @@ bus.on('menu', ({ show, tab }) => { ui.menuShown = show; if (tab) ui.menuTab = t
 bus.on('touch', ({ touch }) => { ui.touch = touch; ui.ringAim = null; ui.ringHot = null; if (!touch) ui.lookOpen = false })
 bus.on('ring_aim', (a) => { ui.ringAim = a })
 bus.on('repo_saved', (r) => { ui.repo = { url: r.url ?? '', error: r.error ?? '' } })
+bus.on('note_field', ({ show }) => { ui.noteField = show })
 bus.on('door_state', (d) => { ui.door = d; if (d.open) ui.doorError = '' })
 bus.on('door_result', (r) => { ui.doorError = r.ok ? '' : (r.error ?? 'wrong word') })
 let flashT = 0

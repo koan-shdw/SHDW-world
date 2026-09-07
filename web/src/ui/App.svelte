@@ -11,6 +11,7 @@
   import WallWidget from './WallWidget.svelte'
   import Options from './Options.svelte'
   import Debug from './Debug.svelte'
+  import NoteField from './NoteField.svelte'
 
   let { base, onviewport }: { base: string; version?: string; onviewport: (el: HTMLElement) => void } = $props()
   let viewport: HTMLElement
@@ -56,6 +57,7 @@
     <Hotbar {base} onadd={() => bus.emit('menu_open', { tab: 'art' })} />
   </div>
   <Hands {base} />
+  <NoteField />
 {/if}
 
 <svelte:document onmousedown={outside} />

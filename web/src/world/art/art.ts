@@ -2,6 +2,7 @@
 import * as THREE from 'three'
 import { strip, artUrl, type Store, type ShowItem, type ArtMeta } from '../store'
 import { prepPainting, prepModel } from './upload'
+import { NOTE_ID, NOTE_ITEM, drawNote } from './note'
 import { type Level, type Wall, wallLength, wallDir, wallPoint, floorOf } from '../room/level'
 import type { Walker } from '../walk'
 import type { Loader } from '../loader'
@@ -13,8 +14,9 @@ export interface Plinth { w: number; d: number; h: number; colour: string }
 export interface TexPick { name: string; cm: number; url?: string }      // name 'custom' carries his own image as a data URL
 /** the look of a sculpture: tint, tile, plinth (null = no plinth). Defaults live on the ArtItem, each placed copy keeps its own */
 export interface SculptLook { colour: string; texture: TexPick | null; plinth: Plinth | null; parts?: Record<string, string> }   // parts: one colour per named part of the model
-export interface ArtItem { id: string; kind: Kind; title: string; file?: string; data?: string; model?: string; thumb?: string; store?: boolean; w: number; h: number; d: number; edge: string; colour?: string; texture?: TexPick | null; plinth?: Plinth | null; parts?: Record<string, string> }
-export interface Placed { id: string; art: string; kind: Kind; wall: string; level: string; u: number; topY: number; snap: SnapLine | null; pos?: [number, number, number]; yaw?: number; colour?: string; texture?: TexPick | null; plinth?: Plinth | null; parts?: Record<string, string> }
+export interface Note { text: string; who: string }
+export interface ArtItem { id: string; kind: Kind; title: string; file?: string; data?: string; model?: string; thumb?: string; store?: boolean; note?: Note; w: number; h: number; d: number; edge: string; colour?: string; texture?: TexPick | null; plinth?: Plinth | null; parts?: Record<string, string> }
+export interface Placed { id: string; art: string; kind: Kind; wall: string; level: string; u: number; topY: number; snap: SnapLine | null; note?: Note; pos?: [number, number, number]; yaw?: number; colour?: string; texture?: TexPick | null; plinth?: Plinth | null; parts?: Record<string, string> }
 export const TEXTURE_CHIPS: { name: string; tile: string | null }[] = [
   { name: 'none', tile: null }, { name: 'concrete', tile: 'concrete' }, { name: 'plaster', tile: 'wall-white' }, { name: 'plywood', tile: 'plywood' },
   { name: 'steel', tile: 'steel-black' }, { name: 'corten', tile: 'corten' }, { name: 'slate', tile: 'slate' }, { name: 'checker', tile: 'checker' },
@@ -296,12 +298,17 @@ export class ArtSystem {
   }
 
   // ---- layout --------------------------------------------------------------------------------
+  /** the work behind a placed item: the library's, or the post-it */
+  artOf(id: string): ArtItem | null { return id === NOTE_ID ? NOTE_ITEM : this.library.find((x) => x.id === id) ?? null }
+  /** a placed post-it drawn with its own words (SHOW.md §6) */
+  private noteItem(p: Placed): ArtItem { return { ...NOTE_ITEM, id: `note:${p.id}`, title: `post-it · ${p.note?.who ?? ''}`, data: drawNote(p.note?.text ?? '', p.note?.who ?? ''), note: p.note } }
   rebuild(): void {
-    this.layout.items = this.layout.items.filter((p) => this.library.some((a) => a.id === p.art))   // an item whose work is gone is dropped, never crashes the room
+    this.layout.items = this.layout.items.filter((p) => p.art === NOTE_ID || this.library.some((a) => a.id === p.art))   // an item whose work is gone is dropped, never crashes the room
     this.group.clear()   // every placed mesh, whatever the map says
     this.meshes.clear()
     for (const p of this.layout.items) {
-      const a = this.library.find((x) => x.id === p.art); if (!a) continue
+      if (p.note && !this.store?.open) continue                                   // the public never sees the notes (SHOW.md §6)
+      const a = p.note ? this.noteItem(p) : this.library.find((x) => x.id === p.art); if (!a) continue
       if (a.kind === 'sculpture') {
         if (!p.pos) continue
         const g = this.meshFor(a, false, p); g.position.set(p.pos[0], p.pos[1], p.pos[2]); g.rotation.y = p.yaw ?? 0
@@ -400,7 +407,12 @@ export class ArtSystem {
 
   // ---- holding and placing ------------------------------------------------------------------
   /** GAME.md §0 law 1: one of each. A work on the wall stays on the wall until you touch it there */
-  isPlaced(id: string): boolean { return this.layout.items.some((p) => p.art === id) }
+  isPlaced(id: string): boolean { return id !== NOTE_ID && this.layout.items.some((p) => p.art === id) }   // the originals law; post-its are many
+  /** SHOW.md §6: the note with your words, in your hands, in your colour */
+  holdNote(text: string): void {
+    const who = this.store?.who ?? 'SHDW'
+    this.hold({ ...NOTE_ITEM, title: `post-it · ${who}`, data: drawNote(text, who), note: { text, who } })
+  }
   hold(a: ArtItem | null): void {
     if (a && this.isPlaced(a.id)) return
     if (this.ghost) { this.scene.remove(this.ghost); this.ghost = null }
@@ -542,7 +554,7 @@ export class ArtSystem {
     const floorY = floorOf(this.lv, this.walker.state.level).floorY
     const g = this.layout.guides
     const pid = `p-${Date.now().toString(36)}-${(this.seq++).toString(36)}`
-    this.layout.items.push({ id: pid, art: this.held.id, kind: 'painting', wall: pv.hit.wall.id, level: this.walker.state.level, u: pv.u0, topY: pv.top - floorY, snap: g.snap === 'free' ? null : g.snap })
+    this.layout.items.push({ id: pid, art: this.held.id, kind: 'painting', wall: pv.hit.wall.id, level: this.walker.state.level, u: pv.u0, topY: pv.top - floorY, snap: g.snap === 'free' ? null : g.snap, ...(this.held.note ? { note: this.held.note } : {}) })
     this.rebuild(); this.autosave()
     const gm = this.meshes.get(pid); if (gm) this.feel?.land(gm);
     this.hold(null)                                             // GAME.md §0 law 2: down means down
@@ -653,6 +665,7 @@ export class ArtSystem {
   }
   /** touch menu `swap`: the next library work of the same kind takes this spot (same wall, u, snap; same floor point, yaw) */
   swapInPlace(p: Placed, step: number): ArtItem | null {
+    if (p.note) return null                                                       // a post-it is its words; nothing swaps for it
     const same = this.library.filter((a) => a.kind === p.kind && (a.id === p.art || !this.isPlaced(a.id))); if (same.length < 2) return null
     const i = same.findIndex((a) => a.id === p.art); const next = same[((i + step) % same.length + same.length) % same.length]
     this.commit(); p.art = next.id

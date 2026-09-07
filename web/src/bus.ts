@@ -15,9 +15,9 @@ export interface PlaySettings { sensitivity: number; fov: number; reduceMotion: 
 export interface WalkSnapshot { level: string; levelName: string; x: number; z: number; onStair: boolean; locked: boolean }
 export interface HudSnapshot { hint: 'enter' | null; cross: boolean; doorTip: string | null; hangTip: string | null; target: boolean }
 export type TouchAction = 'move' | 'down' | 'swap' | 'swapback' | 'turn' | 'turnback' | 'done' | 'alignWall' | 'alignAll'
-export interface TouchSnapshot { placed: string; kind: Kind; title: string; size: string; ring: 'actions' | 'look' }
+export interface TouchSnapshot { placed: string; kind: Kind; title: string; size: string; ring: 'actions' | 'look'; note?: boolean }
 export interface Focus { art: string; placed: string | null; look: SculptLook; parts: string[] }
-export interface ArtSnapshot { library: ArtItem[]; held: string | null; layout: Layout; selected: string | null; placed: Record<string, number>; hands: boolean; focus: Focus | null }
+export interface ArtSnapshot { library: ArtItem[]; held: string | null; heldItem: ArtItem | null; layout: Layout; selected: string | null; placed: Record<string, number>; hands: boolean; focus: Focus | null }
 export type { Placed }
 export interface RoomInfo { hangWalls: number; stairs: number; doors: number; floors: number; eyeCm: number; walls: number }
 export interface LoaderState { active: boolean; done: number; total: number; text: string }
@@ -48,7 +48,11 @@ export interface Events {
   menu_close: Record<string, never>
   menu_open: { tab?: string }
   drop_files: { files: File[] }
-  push_local: { id: string }                           // SHOW.md §5: a work that lives only in this browser goes up to the store, same id, its placements follow                        // SHOW.md §5: dropped anywhere, they land in settings › art
+  push_local: { id: string }
+  note_open: Record<string, never>                     // SHOW.md §6: the note slot: open the field
+  note_field: { show: boolean }                        // world → UI: the field under the crosshair
+  note_text: { text: string }                          // UI → world: enter: the note is in your hands
+  note_cancel: Record<string, never>                           // SHOW.md §5: a work that lives only in this browser goes up to the store, same id, its placements follow                        // SHOW.md §5: dropped anywhere, they land in settings › art
   door_state: { open: boolean; who: Who | null }      // SHOW.md §3: the door in this browser
   door_check: { key: string; who: Who }
   door_result: { ok: boolean; error?: string }

@@ -174,3 +174,19 @@ remembers the door in this browser: open it once, it stays open on this machine 
 - Dev: `web/.env.local` with `VITE_STORE=http://localhost:8787` points a dev build at `npx.cmd wrangler dev --port 8787
   --local` (schema first: `wrangler d1 execute shdw-world --local --file schema.sql`; the word in `worker/.dev.vars`,
   ignored by git).
+
+## 13. S3 as built (09-07)
+
+- `web/src/world/art/note.ts`: the post-it drawn in the browser (512 px, the paper in your colour, a glue band, the
+  turned corner bottom right with the wall showing through, the words in Nunito 700 sized to fit, 140 characters max);
+  `NOTE_ITEM` = the work behind every note (7.6 × 7.6 × 0.2 cm), never in the library list.
+- The bar: nine works and the post-it as the tenth slot, key 0, a square in your colour. Click or 0: the field
+  (`NoteField.svelte`) opens under the crosshair with the mouse free; enter = the note in your hands (the hands show it,
+  `heldItem` on the art snapshot); esc = no note. It hangs like a painting (`place()` copies `note` onto the item).
+- Placed as `art: 'note'` + `note: { text, who }`; drawn per item in `rebuild()` (`noteItem`); the originals law skips
+  notes (`isPlaced`); nothing swaps for a note; the touch ring for a note is move · take down · done; on approach the
+  pill says `SHDW · touch` / `YOZO · touch`.
+- Public door: the note items come in with the show and are never built (`rebuild` skips `note` when the door is
+  closed). Open question 1 kept its default: hidden.
+- Proven on the live store: the pane (SHDW) wrote a note, held it, stuck it on the south wall, the store held it; his
+  Chrome (public) received the item and drew nothing; the test note was taken down, store clean.

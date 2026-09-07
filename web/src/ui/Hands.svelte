@@ -2,7 +2,7 @@
   // The hands slot (GAME-UI §3): the held work, bottom right, like the selected weapon. Empty hands = nothing drawn.
   import { ui } from './state.svelte'
   let { base }: { base: string } = $props()
-  const held = $derived(ui.art?.held ? ui.art.library.find((a) => a.id === ui.art?.held) ?? null : null)
+  const held = $derived(ui.art?.heldItem ?? (ui.art?.held ? ui.art.library.find((a) => a.id === ui.art?.held) ?? null : null))   // a post-it is held without living in the library
   const look = $derived(ui.art?.focus && ui.art.focus.placed === null ? ui.art.focus.look : null)
   const thumb = $derived(held ? (held.kind === 'sculpture' ? held.thumb ?? '' : held.data ?? `${base}data/art/${held.file}`) : '')
 </script>
