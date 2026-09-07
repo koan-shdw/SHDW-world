@@ -44,6 +44,7 @@ export interface Events {
   anchor: { id: string; x: number; y: number; visible: boolean; text?: string }   // R3: world points the UI follows (HANG widget, work labels)
   // ui → world
   menu_close: Record<string, never>
+  menu_open: Record<string, never>
   set_play: { patch: Partial<PlaySettings> }
   touch_action: { action: TouchAction }
   set_look: { look: Look }

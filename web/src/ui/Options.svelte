@@ -1,5 +1,5 @@
 <script lang="ts">
-  // Settings (Esc): controls · file · keys. Nothing else (owner 09-06). Looks and quality live in the debug panel (backtick).
+  // Settings (the button top right; esc backs out): controls · file · keys. Nothing else (owner 09-06). Looks and quality live in the debug panel (backtick).
   import Row from './Row.svelte'
   import { bus } from '../bus'
   import { ui } from './state.svelte'
@@ -33,7 +33,7 @@
       <div class="tabs">
         {#each tabs as t (t)}<button class="tab" class:on={ui.menuTab === t} onclick={() => (ui.menuTab = t)}>{t}</button>{/each}
         <span class="spacer"></span>
-        <button class="tab back" onclick={back}>back <small>esc</small></button>
+        <button class="tab back" onclick={back}>back</button>
       </div>
       <div class="content">
         {#if ui.menuTab === 'controls' && ui.play}
@@ -72,7 +72,8 @@
               <tr><td>arrows</td><td>on a work: nudge 1 cm · shift 10</td></tr>
               <tr><td>tab · delete</td><td>next hung work · take it down</td></tr>
               <tr><td>ctrl z</td><td>undo · shift redo</td></tr>
-              <tr><td>m · esc</td><td>map · settings</td></tr>
+              <tr><td>m</td><td>map</td></tr>
+              <tr><td>esc</td><td>back · frees the mouse, click puts you back</td></tr>
             </tbody>
           </table>
         {/if}

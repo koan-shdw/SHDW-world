@@ -49,6 +49,7 @@
 </div>
 
 <img class="logo top" src="{base}brand/logo.png" alt="CULT 2026" />
+<button class="settings top" onclick={() => bus.emit('menu_open', {})} hidden={ui.menuShown}>settings</button>
 
 <div class="bottom" class:dim={!ui.hud.cross}>
   <AddPanel bind:this={add} />

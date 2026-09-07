@@ -2,7 +2,7 @@
 // Look applies on the mouse event itself, never a frame late. One sensitivity number. No smoothing, no acceleration.
 import { bus } from '../bus'
 
-export type Verb = 'do' | 'touch' | 'putback' | 'turn' | 'turnback' | 'cycleNext' | 'cyclePrev' | 'map' | 'menu' | 'hands' | 'select' | 'undo' | 'redo' | 'remove' | 'debug' | 'keys' | 'gap'
+export type Verb = 'do' | 'touch' | 'putback' | 'turn' | 'turnback' | 'cycleNext' | 'cyclePrev' | 'map' | 'menu' | 'back' | 'hands' | 'select' | 'undo' | 'redo' | 'remove' | 'debug' | 'keys' | 'gap'
 export interface PlaySettings { sensitivity: number; fov: number; reduceMotion: boolean; headBob: boolean }
 const PLAY_KEY = 'shdw-world-play'
 export const defaultPlay = (): PlaySettings => ({ sensitivity: 1.0, fov: 75, reduceMotion: false, headBob: true })
@@ -51,7 +51,7 @@ export class Input {
   private key(e: KeyboardEvent): void {
     const t = e.target as HTMLElement | null
     if (t && (t.tagName === 'INPUT' || t.tagName === 'TEXTAREA' || t.isContentEditable)) return
-    if (e.code === 'Escape') { this.onVerb?.('menu', e); return }
+    if (e.code === 'Escape') { this.onVerb?.('back', e); return }        // esc = back out of a ring, the map or the menu; never opens the menu (owner 09-07)
     if (e.code === 'Backquote') { this.onVerb?.('debug', e); return }
     if ((e.ctrlKey || e.metaKey) && e.code === 'KeyZ') { e.preventDefault(); this.onVerb?.(e.shiftKey ? 'redo' : 'undo', e); return }
     this.keys.add(e.code)

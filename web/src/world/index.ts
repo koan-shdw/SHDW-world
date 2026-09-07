@@ -231,6 +231,7 @@ export async function startWorld(container: HTMLElement, base: string): Promise<
     if (art.held) { art.hold(null); bus.toast('put back in the bar'); return }
   }
   input.onVerb = (verb: Verb, e) => {
+    if (verb === 'back') { if (menuOpen) closeMenu(); else if (bigShown) showMap(false); else if (touch) closeTouch(); return }
     if (menuOpen) { if (verb === 'menu') closeMenu(); return }
     if (bigShown) { if (verb === 'menu' || verb === 'map') showMap(false); return }
     switch (verb) {
@@ -288,8 +289,9 @@ export async function startWorld(container: HTMLElement, base: string): Promise<
     if (art.held?.kind === 'painting') { guideHeight((step > 0 ? -1 : 1) * (big ? 10 : 1)); return }
     art.swap(step)
   }
-  document.addEventListener('pointerlockchange', () => { if (!input.locked && !menuOpen && !bigShown) { menuOpen = true; closeTouch(); bus.emit('menu', { show: true }) } })
+  // losing the lock (esc) frees the mouse and nothing more: click puts you back; the menu is the settings button top right (owner 09-07)
   bus.on('menu_close', () => closeMenu())
+  bus.on('menu_open', () => openMenu())
   bus.on('ui_ring', ({ open, x, y }) => { if (open) input.openRing(x, y); else input.closeRing() })
   // token save (ART.md §4, the owner's path): layouts/<name>.json into the repo through the GitHub contents API
   bus.on('repo_save', ({ name, token }) => {
