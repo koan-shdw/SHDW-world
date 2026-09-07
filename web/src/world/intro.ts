@@ -1,11 +1,11 @@
 // The intro (owner 09-06/07): you start on the far square of the yard. The CULT letters float 10 cm off the red wall under a
-// spotlight that breathes and flickers and throws their shadow. Yozo's words stand in the far background opposite the door,
-// monumental, never moving as you walk (they ride with your position like the sky), mist between you and them, lit now and
-// then by lightning inside the clouds. Nothing else floats in the yard: he will instruct the rest.
+// spotlight that breathes and flickers and throws their shadow. Yozo's words stand opposite the door as a mountain: solid
+// upright letters 300 m out, you look up at them, lit by the light and the lightning (mountain.ts). Nothing else floats in
+// the yard: he will instruct the rest.
 import * as THREE from 'three'
 import type { Level } from './room/level'
 import type { Loader } from './loader'
-import { Text3D } from './text3d'
+import { Mountain } from './mountain'
 
 export const YOZO_QUOTE = [
   '“Cult is a pure frenzy prior to mass consumption, a secret faith bound to a singular aesthetic. Once swallowed by the broader market and known to all, true cult status vanishes.',
@@ -17,7 +17,7 @@ export const YOZO_QUOTE = [
 export class Intro {
   readonly group = new THREE.Group()
   readonly spot: THREE.SpotLight
-  private quote: Text3D
+  readonly mountain: Mountain
   private baseIntensity = 18
 
   constructor(lv: Level, loader: Loader, base: string) {
@@ -46,21 +46,16 @@ export class Intro {
     this.spot.castShadow = true; this.spot.shadow.mapSize.set(1024, 1024); this.spot.shadow.bias = -0.0005; this.spot.shadow.camera.near = 0.3; this.spot.shadow.camera.far = 8
     this.group.add(this.spot, this.spot.target)
 
-    // the word of god: Yozo's quote, fixed in the world 1.4 km out opposite the door, 1.9 km wide: a mountain, it never shifts
-    const eye = floorY + 1.6
-    this.quote = new Text3D(YOZO_QUOTE, { width: 200, size: 7.5, shadow: 'rgba(0,0,0,.5)', lineHeight: 1.22, weight: 700, sheen: true, font: "'Helvetica Neue', Helvetica, Arial, sans-serif" })   // Helvetica (owner 09-07)
-    const K = 9.5
-    this.quote.mesh.position.set(150 * K, eye + 62 * K, 1.0); this.quote.mesh.rotation.y = -Math.PI / 2; this.quote.mesh.scale.setScalar(K)
-    this.quote.opacity = 0.62
-    this.group.add(this.quote.mesh)
+    // the word of god: Yozo's quote as a mountain 300 m out opposite the door, upright, its foot 20 m down on the cloud floor
+    this.mountain = new Mountain(YOZO_QUOTE, 300, floorY - 20, base)
+    this.group.add(this.mountain.group)
   }
 
-  /** every frame: the flicker; the background stays put against your walk; the lightning reaches the words */
-  update(t: number, walkerPos: { x: number; z: number }, flash: number): void {
+  /** every frame: the flicker; the lightning reaches the mountain */
+  update(t: number, flash: number, flashAt: THREE.Vector3): void {
     const n = Math.sin(t * 7.3) * 0.5 + Math.sin(t * 13.7 + 1.3) * 0.3 + Math.sin(t * 29.1 + 2.1) * 0.2
     const drop = Math.sin(t * 0.37) > 0.985 ? 0.55 : 1
     this.spot.intensity = this.baseIntensity * (0.94 + 0.06 * n) * drop
-    void walkerPos
-    this.quote.update(t, flash)
+    this.mountain.update(t, flash, flashAt)
   }
 }
