@@ -33,7 +33,7 @@ export class Store {
   private away = false
 
   constructor() {
-    try { const d = localStorage.getItem(DOOR_KEY); if (d) { const j = JSON.parse(d) as Door; if (j.key && (j.who === 'SHDW' || j.who === 'YOZO')) this.door = j } } catch { /* private */ }
+    try { localStorage.removeItem(DOOR_KEY) } catch { /* private */ }        // his 09-07: the word every time, on the intro; nothing remembered
     try { const p = localStorage.getItem(PENDING_KEY); if (p) this.pending = JSON.parse(p) as Pending[] } catch { /* fresh */ }
     window.addEventListener('pagehide', () => this.park())
     bus.emit('door_state', { open: this.open, who: this.door?.who ?? null })
@@ -54,7 +54,7 @@ export class Store {
     try {
       const r = await fetch(`${STORE}/door`, { method: 'POST', headers: { 'x-door': key, 'x-who': who } })
       const j = (await r.json()) as { ok: boolean; error?: string }
-      if (r.ok && j.ok) { this.door = { key, who }; try { localStorage.setItem(DOOR_KEY, JSON.stringify(this.door)) } catch { /* private */ } bus.emit('door_state', { open: true, who }); return { ok: true } }
+      if (r.ok && j.ok) { this.door = { key, who }; bus.emit('door_state', { open: true, who }); return { ok: true } }
       return { ok: false, error: j.error ?? 'wrong word' }
     } catch { return { ok: false, error: 'the store is away' } }
   }

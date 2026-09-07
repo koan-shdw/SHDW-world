@@ -12,6 +12,7 @@
   import Options from './Options.svelte'
   import Debug from './Debug.svelte'
   import NoteField from './NoteField.svelte'
+  import Intro from './Intro.svelte'
 
   let { base, onviewport }: { base: string; version?: string; onviewport: (el: HTMLElement) => void } = $props()
   let viewport: HTMLElement
@@ -37,7 +38,7 @@
   {#if ui.loader.active}
     <div class="loadbar" title={ui.loader.text}><i style="width:{ui.loader.total ? Math.round(100 * ui.loader.done / ui.loader.total) : 0}%"></i><span>{ui.loader.text}</span></div>
   {/if}
-  {#if ui.hud.hint === 'enter' && ui.room}
+  {#if ui.hud.hint === 'enter' && ui.room && ui.chosen}
     <div class="hint">click to enter</div>
   {/if}
   <div class="crosshair" class:target={ui.hud.target} hidden={!ui.hud.cross}></div>
@@ -50,7 +51,8 @@
 </div>
 
 <img class="logo top" src="{base}brand/logo.png" alt="CULT 2026" />
-<button class="settings top" onclick={() => bus.emit('menu_open', {})} hidden={ui.menuShown}>settings</button>
+<button class="settings top" onclick={() => bus.emit('menu_open', {})} hidden={ui.menuShown || !ui.chosen}>settings</button>
+<Intro {base} />
 
 {#if ui.door.open}
   <div class="bottom" class:dim={!ui.hud.cross}>

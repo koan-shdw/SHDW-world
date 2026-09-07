@@ -198,3 +198,23 @@ remembers the door in this browser: open it once, it stays open on this machine 
   `added … to the library`, `removed … from the library`). Asked once, on the tab click (an effect that asked on the tab
   looped: the bus handler's write counted as a read; gone).
 - Restore stays his word (§7).
+
+
+## 15. The intro, KOAN, dark (09-07, his words, after "that entire workflow is stupid")
+
+His words: "1. when you login they get an intro screen, 2. intro screen says choose your player, it has three options,
+YOZO, KOAN or PUBLIC, 3. yozo and koan have password under them, 4. then when they select they enter the game."
+"Change it to dark mode." "The entire UI should be dark mode."
+
+- Every open starts on the intro (`web/src/ui/Intro.svelte`): the world dimmed and blurred behind, the CULT mark, one
+  line `choose your player`, three cards: YOZO blue, KOAN red, PUBLIC dark grey. Click YOZO or KOAN: the word field opens
+  inside the card; wrong word shakes the card and says `wrong word`; right word: the screen fades, you are in as that
+  player. PUBLIC: straight in, look only. Nothing else on the screen: no settings button, no hint until a player is picked.
+- The word every time: nothing is remembered between opens (`store.ts` never restores the door). The door tab is gone
+  from settings; the login exists only on the intro. Settings: controls · art · file · keys · history (public: controls).
+- SHDW is KOAN everywhere now (`Who`, the note colours, the default name); old rows in the store that say SHDW stay as
+  they are in history.
+- Dark mode: the WORLD tokens flipped (`themes.ts`, `styles.css` `:root`): ink panels `#17191d`, white words, the sky
+  accent kept, soft dark shadows, the CULT mark inverted to white where it sits on the UI. Every panel, the bar, the
+  hands card, the rings, the wall widget, the toasts, the note field, the add panel follow the tokens.
+- §2 and §3 above describe the first design (the door in settings); this section is the truth.

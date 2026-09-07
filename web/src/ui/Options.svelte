@@ -1,11 +1,11 @@
 <script lang="ts">
-  // Settings (the button top right; esc backs out): controls · file · keys. Nothing else (owner 09-06). Looks and quality live in the debug panel (backtick).
+  // Settings (the button top right; esc backs out): controls · art · file · keys · history. The login is the intro screen. Nothing else (owner 09-06). Looks and quality live in the debug panel (backtick).
   import Row from './Row.svelte'
   import AddPanel from './AddPanel.svelte'
   import { bus } from '../bus'
   import { ui, nameOf } from './state.svelte'
   let { base }: { base: string } = $props()
-  const tabs = $derived(ui.door.open ? ['controls', 'art', 'file', 'keys', 'history', 'the door'] : ['controls', 'the door'])   // SHOW.md §2-3, §5, §7
+  const tabs = $derived(ui.door.open ? ['controls', 'art', 'file', 'keys', 'history'] : ['controls'])   // SHOW.md §2, §5, §7; the login is the intro screen
   const when = (ts: number) => { const d = new Date(ts); const today = new Date().toDateString() === d.toDateString(); return (today ? '' : `${d.getDate()}/${d.getMonth() + 1} `) + d.toTimeString().slice(0, 5) }
   const what = (r: { op: string; item: Record<string, unknown> | null }) => {
     const it = r.item ?? {}; const note = it.note as { text?: string } | undefined
@@ -19,9 +19,6 @@
   const pushAll = () => { for (const a of onlyHere) bus.emit('push_local', { id: a.id }) }
   const removeArt = (a: NonNullable<typeof ui.art>['library'][number]) => { if (confirm(`remove ${a.title} from the library, for everyone?`)) bus.emit('remove_local', { id: a.id }) }
   $effect(() => { if (!tabs.includes(ui.menuTab)) ui.menuTab = 'controls' })
-  let word = $state(''), who = $state<'SHDW' | 'YOZO' | null>(null), shake = $state(false)
-  const enter = () => { if (!word || !who) return; bus.emit('door_check', { key: word, who }) }
-  $effect(() => { if (ui.doorError) { shake = true; setTimeout(() => (shake = false), 400) } })
   let eye = $state(160)
   $effect(() => { if (ui.room) eye = ui.room.eyeCm })
   let loadI = $state<HTMLInputElement>()
@@ -98,21 +95,6 @@
             {#if !ui.history.rows.length && !ui.history.loading}<div class="note">nothing yet</div>{/if}
           </div>
           {#if !ui.history.done && ui.history.rows.length}<div class="chips"><button class="chip" onclick={() => bus.emit('history_get', { before: ui.history.rows[ui.history.rows.length - 1].ts })}>more</button></div>{/if}
-        {:else if ui.menuTab === 'the door'}
-          {#if ui.door.open}
-            <div class="note">you are in as <b>{ui.door.who}</b> · every change saves itself · the public sees the show, not the tools</div>
-            <div class="chips"><button class="chip" onclick={() => bus.emit('door_leave', {})}>leave</button></div>
-          {:else}
-            <Row label="the word"><input type="password" class:shake placeholder="the shared word" bind:value={word} onkeydown={(e) => { if (e.key === 'Enter') enter() }} /></Row>
-            <div class="chips">
-              <button class="chip who shdw" class:on={who === 'SHDW'} onclick={() => (who = 'SHDW')}>SHDW</button>
-              <button class="chip who yozo" class:on={who === 'YOZO'} onclick={() => (who = 'YOZO')}>YOZO</button>
-              <span class="spacer"></span>
-              <button class="chip" disabled={!word || !who} onclick={enter}>enter</button>
-            </div>
-            {#if ui.doorError}<div class="note" style="color: var(--bad)">{ui.doorError}</div>{/if}
-            <div class="note">the door is for SHDW and YOZO · it stays open on this machine</div>
-          {/if}
         {:else}
           <table class="keys">
             <tbody>

@@ -410,7 +410,7 @@ export class ArtSystem {
   isPlaced(id: string): boolean { return id !== NOTE_ID && this.layout.items.some((p) => p.art === id) }   // the originals law; post-its are many
   /** SHOW.md §6: the note with your words, in your hands, in your colour */
   holdNote(text: string): void {
-    const who = this.store?.who ?? 'SHDW'
+    const who = this.store?.who ?? 'KOAN'
     this.hold({ ...NOTE_ITEM, title: `post-it · ${who}`, data: drawNote(text, who), note: { text, who } })
   }
   hold(a: ArtItem | null): void {

@@ -30,6 +30,7 @@ export const ui = $state({
   entered: false,
   door: { open: false, who: null as Who | null },
   noteField: false,
+  chosen: false,                                        // the intro screen: a player picked (every open)
   history: { rows: [] as HistoryRow[], done: false, loading: false },
   doorError: '',
 })

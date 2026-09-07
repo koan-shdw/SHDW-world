@@ -1,21 +1,21 @@
-/* SHDW.world — the WORLD skin (GAME.md §2). KOAN var contract underneath (themes.ts sets the tokens), the shape is the game's:
-   rounded, chunky, 2 px ink outlines, one hard shadow that collapses on press, a rounded sans, lowercase. */
+/* SHDW.world — the WORLD skin, dark (his 09-07). KOAN var contract underneath (themes.ts sets the tokens), the shape is the game's:
+   rounded, chunky, one soft shadow that collapses on press, a rounded sans, lowercase. */
 
 @font-face { font-family: 'Nunito'; src: url('/fonts/nunito.woff2') format('woff2'); font-weight: 200 1000; font-display: swap; }
 
 :root {
-  --bg0: #F8F8F8; --bg: #EEF4F7; --bg2: #E2ECF2;
-  --panel: #FFFFFF; --panel2: #F1F6F9; --field: #FFFFFF; --header: #F8F8F8;
-  --line: #0f0f0f; --line2: #0f0f0f;
-  --txt-hi: #0f0f0f; --txt: #1c2429; --body: #2c3a44; --muted: #647A87; --dim: #93A6B1;
-  --accent: #66BDE6; --accent-dim: #3f9fcf; --accent-soft: #afe7eb; --on-accent: #0f0f0f;
-  --ok: #8cc48c; --warn: #f3c258; --bad: #c25959; --focus: #66BDE6;
+  --bg0: #0b0b0d; --bg: #101114; --bg2: #16181c;
+  --panel: #17191d; --panel2: #22252b; --field: #0f1013; --header: #0f1013;
+  --line: #f4f4f0; --line2: #f4f4f0;
+  --txt-hi: #f6f6f2; --txt: #e6e6e0; --body: #cfd3d6; --muted: #8a949c; --dim: #5c656c;
+  --accent: #66BDE6; --accent-dim: #3f9fcf; --accent-soft: #1f3a46; --on-accent: #0f0f0f;
+  --ok: #8cc48c; --warn: #f3c258; --bad: #e0655f; --focus: #66BDE6;
   --mono: 'SFMono-Regular', Consolas, 'Liberation Mono', Menlo, monospace;
   --sans: 'Nunito', 'Segoe UI', system-ui, -apple-system, Roboto, sans-serif;
   --r-card: 14px; --r-slot: 10px; --r-pill: 999px;
-  --ink: 1px solid rgba(15,15,15,.08);
-  --shadow: 0 10px 28px rgba(15,15,15,.14), 0 2px 6px rgba(15,15,15,.06);
-  --shadow-sm: 0 4px 12px rgba(15,15,15,.12);
+  --ink: 1px solid rgba(255,255,255,.1);
+  --shadow: 0 10px 28px rgba(0,0,0,.5), 0 2px 6px rgba(0,0,0,.35);
+  --shadow-sm: 0 4px 12px rgba(0,0,0,.4);
   --d-micro: 70ms; --d-snap: 120ms; --d-pop: 180ms; --d-move: 220ms;
   --e-out: cubic-bezier(.22,.61,.36,1); --e-back: cubic-bezier(.34,1.56,.64,1);
 }
@@ -37,7 +37,7 @@ html, body { margin: 0; height: 100%; background: var(--bg); color: var(--txt); 
 .viewport .loadbar span { position: absolute; inset: 0; font-size: 10px; line-height: 12px; text-align: center; color: var(--txt-hi); }
 
 /* the title card (GAME.md §3): before the first click */
-.viewport .title { position: absolute; inset: 0; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 18px; background: rgba(238,244,247,.55); backdrop-filter: blur(2px); pointer-events: none; animation: fadein .4s var(--e-out); }
+.viewport .title { position: absolute; inset: 0; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 18px; background: rgba(10,10,12,.55); backdrop-filter: blur(2px); pointer-events: none; animation: fadein .4s var(--e-out); }
 .viewport .title .mark.big { font-size: 44px; letter-spacing: 1px; padding: 10px 26px; background: var(--panel); border: var(--ink); border-radius: var(--r-card); box-shadow: var(--shadow); color: var(--txt-hi); animation: pop .5s var(--e-back); }
 .viewport .title .enter { font-size: 16px; color: var(--txt-hi); background: var(--warn); border: var(--ink); border-radius: var(--r-pill); padding: 8px 18px; box-shadow: var(--shadow-sm); animation: bob 1.6s var(--e-out) infinite alternate; }
 @keyframes pop { from { transform: scale(.85); opacity: 0; } to { transform: scale(1); opacity: 1; } }
@@ -59,8 +59,8 @@ button, .chip {
   font: 800 14px var(--sans); padding: 6px 14px; min-height: 30px; cursor: pointer; text-transform: lowercase;
   box-shadow: var(--shadow-sm); transition: transform var(--d-micro) var(--e-out), box-shadow var(--d-micro) var(--e-out), background var(--d-micro);
 }
-button:hover, .chip:hover { transform: translateY(-1px); box-shadow: 0 6px 16px rgba(15,15,15,.14); background: var(--panel2); }
-button:active, .chip:active { transform: translateY(1px); box-shadow: 0 1px 3px rgba(15,15,15,.12); }
+button:hover, .chip:hover { transform: translateY(-1px); box-shadow: 0 6px 16px rgba(0,0,0,.45); background: var(--panel2); }
+button:active, .chip:active { transform: translateY(1px); box-shadow: 0 1px 3px rgba(0,0,0,.4); }
 button.on, .chip.on { background: var(--accent); color: var(--on-accent); }
 button:disabled { opacity: .45; cursor: not-allowed; transform: none; }
 button.icon, .chip.icon { padding: 4px 8px; min-height: 26px; display: inline-flex; align-items: center; }
@@ -97,14 +97,14 @@ input[type='color'] { width: 44px; height: 30px; padding: 0 2px; background: var
 .hotbar .slot { position: relative; width: 56px; height: 56px; padding: 0; background: var(--bg2); border: var(--ink); border-radius: var(--r-slot); overflow: hidden; cursor: pointer; box-shadow: none; }
 .hotbar .slot:hover { transform: translateY(-3px); box-shadow: var(--shadow-sm); }
 .hotbar .slot.held { transform: translateY(-8px) scale(1.08); box-shadow: 0 0 0 3px var(--accent), var(--shadow-sm); z-index: 1; }
-.hotbar .slot.empty { background: rgba(15,15,15,.05); border: none; box-shadow: none; }
+.hotbar .slot.empty { background: rgba(255,255,255,.06); border: none; box-shadow: none; }
 .hotbar .slot.empty .key { display: none; }
 .hotbar .slot.wide { width: auto; padding: 0 16px; font-size: 12px; color: var(--muted); opacity: .9; }
 .hotbar .slot.placed { opacity: .5; filter: saturate(.3); cursor: default; }
 .hotbar .slot.placed:hover { transform: none; box-shadow: none; }
 .hotbar .slot img { width: 100%; height: 100%; object-fit: cover; display: block; }
 .hotbar .slot .model { display: flex; align-items: center; justify-content: center; height: 100%; color: var(--muted); }
-.hotbar .slot .key { position: absolute; left: 4px; top: 3px; font-size: 10px; font-weight: 800; color: var(--panel); text-shadow: 0 1px 2px rgba(0,0,0,.5); z-index: 1; }
+.hotbar .slot .key { position: absolute; left: 4px; top: 3px; font-size: 10px; font-weight: 800; color: var(--txt-hi); text-shadow: 0 1px 2px rgba(0,0,0,.7); z-index: 1; }
 .hotbar .slot .count { position: absolute; right: 3px; bottom: 3px; font-size: 9px; color: var(--on-accent); background: var(--warn); border-radius: 6px; padding: 0 4px; font-family: var(--sans); }
 .hotbar .slot.placed .count { background: var(--bg2); color: var(--muted); }
 
@@ -117,7 +117,7 @@ input[type='color'] { width: 44px; height: 30px; padding: 0 2px; background: var
 .hands .txt { min-width: 0; }
 
 /* ---------- the action ring, zelda style ---------- */
-.viewport .ringdim { position: absolute; inset: 0; z-index: 23; background: rgba(15,15,15,.28); pointer-events: none; animation: fadein var(--d-pop) var(--e-out); }
+.viewport .ringdim { position: absolute; inset: 0; z-index: 23; background: rgba(0,0,0,.45); pointer-events: none; animation: fadein var(--d-pop) var(--e-out); }
 .viewport .ring { position: absolute; z-index: 24; width: 0; height: 0; pointer-events: none; }
 .viewport .ring .orbit { position: absolute; left: calc(-1 * var(--r, 96px)); top: calc(-1 * var(--r, 96px)); width: calc(2 * var(--r, 96px)); height: calc(2 * var(--r, 96px)); border-radius: 50%; border: 2px dashed rgba(248,248,248,.7); animation: pop var(--d-pop) var(--e-out); }
 .viewport .ring .name { position: absolute; left: 0; top: calc(-1 * var(--r, 96px) - 54px); transform: translate(-50%, -50%); white-space: nowrap; font-size: 15px; font-weight: 800; color: var(--txt-hi); background: var(--panel); border-radius: var(--r-pill); padding: 5px 16px; box-shadow: var(--shadow-sm); animation: pop var(--d-pop) var(--e-back); }
@@ -142,7 +142,7 @@ input[type='color'] { width: 44px; height: 30px; padding: 0 2px; background: var
 .addpanel .fields input[type='number'] { width: 64px; }
 
 /* ---------- options ---------- */
-.options { position: absolute; inset: 0; z-index: 40; background: rgba(15,15,15,.45); display: flex; align-items: center; justify-content: center; backdrop-filter: blur(3px); animation: fadein var(--d-move) var(--e-out); }
+.options { position: absolute; inset: 0; z-index: 40; background: rgba(0,0,0,.6); display: flex; align-items: center; justify-content: center; backdrop-filter: blur(3px); animation: fadein var(--d-move) var(--e-out); }
 .options .panel { width: 640px; max-width: 92vw; max-height: 86vh; background: var(--panel); border: var(--ink); border-radius: 18px; box-shadow: 0 10px 0 rgba(0,0,0,.25); display: flex; flex-direction: column; overflow: hidden; animation: pop var(--d-move) var(--e-back); }
 .options .panel > .mark { padding: 14px 18px; border-bottom: var(--ink); font-size: 20px; }
 .options .body { display: flex; min-height: 340px; }
@@ -186,11 +186,9 @@ input[type='color'] { width: 44px; height: 30px; padding: 0 2px; background: var
 .viewport .widget .wrow.lit { background: var(--warn); }
 
 /* the show's logo (owner 09-06): CULT 2026, a photo of the etched plate */
-.logo { display: block; }
+.logo { display: block; filter: invert(1); }   /* the CULT mark is ink on clear; the UI is dark */
 .logo.top { position: absolute; left: 18px; top: 14px; height: 34px; width: auto; z-index: 20; pointer-events: none; }
 .settings.top { position: absolute; right: 18px; top: 14px; z-index: 20; }
-.chip.who.shdw.on { background: #e5484d; color: #fff; }
-.chip.who.yozo.on { background: #4d7cff; color: #fff; }
 .slot.note .paper { display: block; width: 26px; height: 26px; margin: 0 auto; background: var(--note); border-radius: 2px; box-shadow: 2px 3px 6px rgba(15,15,15,.25); transform: rotate(-4deg); }
 .slot.note.held .paper { transform: rotate(4deg) scale(1.08); }
 .notefield { position: absolute; left: 50%; top: 50%; width: 260px; padding: 16px 16px 10px; background: var(--note); border-radius: 3px; box-shadow: 0 12px 30px rgba(15,15,15,.35); z-index: 30; transform: translate(-50%, -50%) rotate(-2deg); animation: notepop .25s var(--e-back); }
@@ -223,3 +221,17 @@ input[type='color'] { width: 44px; height: 30px; padding: 0 2px; background: var
 .viewport .ring .tile.hot { background-color: var(--warn); }
 .viewport .ring .tile.hot.swatch, .viewport .ring .tile.hot[style*="background-image"] { background-color: unset; }
 
+
+/* ---------- the intro (his 09-07): choose your player ---------- */
+.intro { position: absolute; inset: 0; z-index: 60; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 26px; background: rgba(8,8,10,.86); backdrop-filter: blur(6px); animation: fadein .4s var(--e-out); }
+.intro .logo { height: 76px; width: auto; }
+.intro .choose { color: var(--txt-hi); font-size: 15px; letter-spacing: .4px; }
+.intro .players { display: flex; gap: 18px; }
+.intro .player { width: 180px; height: 150px; border-radius: 16px; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 12px; cursor: pointer; color: #fff; font-size: 24px; font-weight: 900; box-shadow: var(--shadow); transition: transform var(--d-snap) var(--e-out), box-shadow var(--d-snap); outline: none; }
+.intro .player:hover, .intro .player:focus-visible { transform: translateY(-3px); box-shadow: 0 16px 36px rgba(0,0,0,.6); }
+.intro .player.open { transform: translateY(-3px); }
+.intro .player.yozo { background: #4d7cff; }
+.intro .player.koan { background: #e5484d; }
+.intro .player.public { background: #26292f; }
+.intro .player input { width: 140px; padding: 8px 10px; border-radius: 8px; border: 0; background: rgba(255,255,255,.94); color: #0f0f0f; font: 700 14px var(--sans); text-align: center; text-transform: none; outline: none; }
+.intro .wrong { color: var(--bad); font-size: 14px; }

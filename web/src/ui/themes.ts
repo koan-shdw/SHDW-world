@@ -10,17 +10,17 @@ export const THEME_VARS = [
 ] as const
 
 export const PRESET_THEMES: Record<string, ThemeMap> = {
-  // WORLD (GAME.md §2): Messenger's palette pushed to DokeV's sun. Light, chunky, ink outlines. The game's default.
+  // WORLD, dark (his 09-07: "the entire UI should be dark mode"): ink panels, white words, the sky accent, chunky.
   WORLD: {
-    '--bg0': '#F8F8F8', '--bg': '#EEF4F7', '--bg2': '#E2ECF2',
-    '--panel': '#FFFFFF', '--panel2': '#F1F6F9', '--field': '#FFFFFF',
-    '--header': '#F8F8F8',
-    '--line': '#0f0f0f', '--line2': '#0f0f0f',
-    '--txt-hi': '#0f0f0f', '--txt': '#1c2429', '--body': '#2c3a44',
-    '--muted': '#647A87', '--dim': '#93A6B1',
-    '--accent': '#66BDE6', '--accent-dim': '#3f9fcf', '--accent-soft': '#afe7eb',
+    '--bg0': '#0b0b0d', '--bg': '#101114', '--bg2': '#16181c',
+    '--panel': '#17191d', '--panel2': '#22252b', '--field': '#0f1013',
+    '--header': '#0f1013',
+    '--line': '#f4f4f0', '--line2': '#f4f4f0',
+    '--txt-hi': '#f6f6f2', '--txt': '#e6e6e0', '--body': '#cfd3d6',
+    '--muted': '#8a949c', '--dim': '#5c656c',
+    '--accent': '#66BDE6', '--accent-dim': '#3f9fcf', '--accent-soft': '#1f3a46',
     '--on-accent': '#0f0f0f',
-    '--ok': '#8cc48c', '--warn': '#f3c258', '--bad': '#c25959', '--focus': '#66BDE6',
+    '--ok': '#8cc48c', '--warn': '#f3c258', '--bad': '#e0655f', '--focus': '#66BDE6',
   },
 }
 

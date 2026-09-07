@@ -7,7 +7,7 @@ export type ToastKind = 'ok' | 'warn' | 'bad'
 export type Quality = 'full' | 'balanced' | 'low'
 export type FxKey = 'lut' | 'sky' | 'plants' | 'glass' | 'surface' | 'outline' | 'dither' | 'smaa'
 export type FxState = Record<FxKey, boolean>
-export type Who = 'SHDW' | 'YOZO'
+export type Who = 'KOAN' | 'YOZO'
 export interface HistoryRow { ts: number; who: string; op: string; id: string; item: Record<string, unknown> | null }
 
 export interface PlaySettings { sensitivity: number; fov: number; reduceMotion: boolean; headBob: boolean }
