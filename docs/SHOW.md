@@ -169,9 +169,8 @@ remembers the door in this browser: open it once, it stays open on this machine 
 - Proven against `wrangler dev` (local D1 + R2): a drop from the pane (the door, SHDW) went up as jpg + thumb + meta,
   hung on the south wall, and his Chrome (public) showed the painting on the wall from the store on open; a work that
   lived only in the pane went up with `to the store` under the same id.
-- **Pending his hand**: R2 must be enabled once in the Cloudflare dashboard (the CLI refuses: code 10042); then
-  `npx.cmd wrangler deploy` from `worker/` and the site push. Until then the live site's art tab talks to a Worker
-  without the art routes: an upload says `not in the store · the store said 404 · kept in this browser only`.
+- Live 09-07: he enabled R2 in the dashboard, the bucket `shdw-world-art` was created, the Worker deployed with the
+  ART binding, the site pushed.
 - Dev: `web/.env.local` with `VITE_STORE=http://localhost:8787` points a dev build at `npx.cmd wrangler dev --port 8787
   --local` (schema first: `wrangler d1 execute shdw-world --local --file schema.sql`; the word in `worker/.dev.vars`,
   ignored by git).
