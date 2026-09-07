@@ -73,7 +73,7 @@ export class Void {
     stand(82, 900, 500, floorY + 120, 0.035, 0.55, 14.1, -5)
     stand(420, 2600, 1000, floorY + 220, 0.011, 0.25, 17.3, -7)
     stand(950, 3800, 1500, floorY + 380, 0.007, 0.3, 20.5, -8)
-    stand(350, 2600, 300, floorY - 150, 0.012, 0.75, 23.7, -4, [floorY - 42, floorY - 20])
+    stand(350, 2600, 300, floorY - 370, 0.012, 0.75, 23.7, -4, [floorY - 262, floorY - 240])
     // the old flat void disc goes: the smoke is the void now
     room.traverse((o) => { const m = o as THREE.Mesh; if (m.isMesh && m.userData.kind === 'ground') m.visible = false })
   }
