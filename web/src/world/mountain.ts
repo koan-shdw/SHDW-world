@@ -1,15 +1,16 @@
 // The mountain (owner 09-07: "so far away and so big that it looks like it has perspective, a genuine mountain in the
 // distance, the colour illuminated by the lighting, not flat white"): Yozo's words as solid Helvetica letters cut deep like
-// stone, one upright block 400 m out opposite the door, 1.6 km wide and 900 m tall, wider than the view (owner: "MASSIVE
-// MONUMENTAL GIGANTIC, you have to look up to see it"): the bottom line 24° up above the roofline, the top 70° up, hazed, into
-// the clouds. Sized by the look-up angle, never to fit the screen. Lit by a cool key light, a slow sweep, and the lightning.
+// stone, one upright column 400 m out opposite the door, 820 m wide and 1.7 km tall (owner: "MASSIVE MONUMENTAL GIGANTIC,
+// you have to look up to see it"; "start on the ground, wrap shorter, taller"): the bottom line stands on the ground, the
+// top 77° up, hazed, into the clouds. Sized by the look-up angle, never to fit the screen. Lit by a cool key light, a slow
+// sweep, and the lightning.
 import * as THREE from 'three'
 import { FontLoader, type Font } from 'three/examples/jsm/loaders/FontLoader.js'
 import { TextGeometry } from 'three/examples/jsm/geometries/TextGeometry.js'
 import { mergeGeometries } from 'three/examples/jsm/utils/BufferGeometryUtils.js'
 
 export interface MountainOpts { width: number; size: number; depth: number; lean: number; lineHeight: number; paraGap: number }
-const DEFAULTS: MountainOpts = { width: 1640, size: 60, depth: 17, lean: 0, lineHeight: 1.22, paraGap: 0.6 }
+const DEFAULTS: MountainOpts = { width: 820, size: 60, depth: 17, lean: 0, lineHeight: 1.22, paraGap: 0.6 }   // owner: wrap short, a tall column
 
 const vert = /* glsl */ `
 varying vec3 vW; varying vec3 vN; varying vec3 vL;
@@ -72,7 +73,7 @@ export class Mountain {
         uGroundCol: { value: new THREE.Color(0.05, 0.05, 0.06) },
         uAlbedo: { value: new THREE.Color(0.5, 0.5, 0.52) },
         uHaze: { value: new THREE.Color(0.035, 0.04, 0.055) },
-        uHazeRange: { value: new THREE.Vector2(500, 2200) },   // the bottom rows clear, the top rows a third into the sky's grey
+        uHazeRange: { value: new THREE.Vector2(600, 3000) },   // the bottom rows clear, the top rows half into the sky's grey
       },
       vertexShader: vert, fragmentShader: frag, fog: false,
     })
