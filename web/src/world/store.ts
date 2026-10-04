@@ -17,7 +17,7 @@ export interface ShowItem extends Placed { who?: string; ts?: number }
 export interface ArtMeta extends Omit<ArtItem, 'store'> { who?: string; ts?: number; ext?: string; hasThumb?: boolean }
 export interface Show { items: ShowItem[]; art: ArtMeta[] }
 export interface Changes { items: ShowItem[]; deleted: string[]; art: ArtMeta[]; artDeleted: string[] }
-type Pending = { op: 'put'; id: string; item: Placed } | { op: 'del'; id: string } | { op: 'clear' }
+type Pending = ({ op: 'put'; id: string; item: Placed } | { op: 'del'; id: string } | { op: 'clear' }) & { error?: string }
 
 /** the store's copy of an item, without the store's own stamps */
 export const strip = (p: ShowItem): Placed => { const { who, ts, ...rest } = p; void who; void ts; return rest as Placed }
@@ -31,17 +31,31 @@ export class Store {
   private pending: Pending[] = []
   private sending = false
   private away = false
+  private failed: string | null = null
+  private onPageHide = () => this.park()
 
   constructor() {
     try { localStorage.removeItem(DOOR_KEY) } catch { /* private */ }        // his 09-07: the word every time, on the intro; nothing remembered
     try { const p = localStorage.getItem(PENDING_KEY); if (p) this.pending = JSON.parse(p) as Pending[] } catch { /* fresh */ }
-    window.addEventListener('pagehide', () => this.park())
+    window.addEventListener('pagehide', this.onPageHide)
     bus.emit('door_state', { open: this.open, who: this.door?.who ?? null })
   }
 
   get open(): boolean { return !!this.door }
   get who(): Who | null { return this.door?.who ?? null }
-  hasPending(id: string): boolean { return this.waiting.has(id) || this.pending.some((p) => p.op !== 'clear' && p.id === id) }
+  hasPending(id: string): boolean { return this.waiting.has(id) || this.pending.some((p) => p.op === 'clear' || p.id === id) }
+  /** Replay unsent edits over the latest server snapshot, including after a reload. */
+  overlay(items: Placed[]): Placed[] {
+    const out = new Map(items.map((p) => [p.id, p]))
+    if (!this.open) return [...out.values()]
+    for (const p of this.pending) { if (p.op === 'clear') out.clear(); else if (p.op === 'del') out.delete(p.id); else out.set(p.id, p.item) }
+    for (const [id, p] of this.waiting) out.set(id, p)
+    return [...out.values()]
+  }
+  private status(): void {
+    const error = this.failed ?? this.pending.find(p => p.error && (p.op === 'clear' || !this.waiting.has(p.id)))?.error ?? null
+    bus.emit('save_state', { pending: this.pending.length + this.waiting.size, state: error ? 'error' : this.away ? 'offline' : this.pending.length || this.waiting.size ? 'saving' : 'saved', error })
+  }
 
   private headers(): Record<string, string> {
     const h: Record<string, string> = { 'content-type': 'application/json' }
@@ -66,23 +80,30 @@ export class Store {
   // ---- reads ----------------------------------------------------------------------------------
   async load(): Promise<Show | null> {
     try {
-      const r = await fetch(`${STORE}/show`, { cache: 'no-store' })
+      const r = await fetch(`${STORE}/show`, { cache: 'no-store', headers: this.headers() })
       if (!r.ok) throw new Error(String(r.status))
       const j = (await r.json()) as { version: number; items: ShowItem[]; art?: ArtMeta[] }
-      this.version = j.version; this.away = false
+      this.version = j.version; this.away = false; this.status()
       return { items: j.items, art: j.art ?? [] }
     } catch { this.gone(); return null }
   }
   async since(): Promise<Changes | null> {
     try {
-      const r = await fetch(`${STORE}/show?since=${this.version + 1}`, { cache: 'no-store' })
+      const r = await fetch(`${STORE}/show?since=${this.version + 1}`, { cache: 'no-store', headers: this.headers() })
       if (!r.ok) throw new Error(String(r.status))
       const j = (await r.json()) as { version: number; items: ShowItem[]; deleted: string[]; art?: ArtMeta[]; artDeleted?: string[] }
-      this.version = Math.max(this.version, j.version); this.away = false
+      this.version = Math.max(this.version, j.version); this.away = false; this.status()
       return { items: j.items, deleted: j.deleted, art: j.art ?? [], artDeleted: j.artDeleted ?? [] }
     } catch { this.gone(); return null }
   }
   /** SHOW.md §5: the file, the thumb, then the meta; the work is in the store for everyone when this returns */
+  async uploadTexture(prepped: Prepped): Promise<string> {
+    if (!this.door) throw new Error('the door')
+    const id = `texture-${crypto.randomUUID()}`
+    const r = await fetch(`${STORE}/art/${id}/file`, { method: 'PUT', headers: { ...this.headers(), 'content-type': prepped.type }, body: prepped.blob })
+    if (!r.ok) throw new Error(`texture not saved · the store said ${r.status}`)
+    return ((await r.json()) as { url: string }).url
+  }
   async uploadArt(id: string, meta: ArtMeta, prepped: Prepped): Promise<ArtMeta> {
     if (!this.door) throw new Error('the door')
     const h = this.headers()
@@ -93,13 +114,14 @@ export class Store {
     const full: ArtMeta = { ...meta, id, ext, hasThumb: !!prepped.thumb }
     const m = await fetch(`${STORE}/art/${encodeURIComponent(id)}`, { method: 'PUT', headers: h, body: JSON.stringify(full) })
     if (!m.ok) throw new Error(`the store said ${m.status}`)
-    return full
+    return { ...full, ts: ((await m.json()) as { version: number }).version }
   }
   /** the meta again under the same id: title, size; the file stays */
-  async updateArt(id: string, meta: ArtMeta): Promise<void> {
+  async updateArt(id: string, meta: ArtMeta): Promise<number> {
     if (!this.door) throw new Error('the door')
     const r = await fetch(`${STORE}/art/${encodeURIComponent(id)}`, { method: 'PUT', headers: this.headers(), body: JSON.stringify({ ...meta, id }) })
     if (!r.ok) throw new Error(`the store said ${r.status}`)
+    return ((await r.json()) as { version: number }).version
   }
   async deleteArt(id: string): Promise<void> {
     if (!this.door) throw new Error('the door')
@@ -108,7 +130,7 @@ export class Store {
   }
   async history(before?: number): Promise<HistoryRow[] | null> {
     try {
-      const r = await fetch(`${STORE}/show/history${before ? `?before=${before}` : ''}`, { headers: this.headers(), cache: 'no-store' })
+      const r = await fetch(`${STORE}/show/history${before ? `?beforeId=${before}` : ''}`, { headers: this.headers(), cache: 'no-store' })
       if (!r.ok) throw new Error(String(r.status))
       return ((await r.json()) as { rows: HistoryRow[] }).rows
     } catch { return null }
@@ -117,7 +139,8 @@ export class Store {
   // ---- writes (the door only) -------------------------------------------------------------------
   put(item: Placed): void {
     if (!this.door) return
-    this.waiting.set(item.id, item)
+    this.waiting.set(item.id, structuredClone(strip(item)))
+    this.failed = null; this.save()
     const t = this.timers.get(item.id); if (t) clearTimeout(t)
     this.timers.set(item.id, window.setTimeout(() => { this.timers.delete(item.id); const it = this.waiting.get(item.id); this.waiting.delete(item.id); if (it) this.queue({ op: 'put', id: item.id, item: it }) }, DEBOUNCE_MS))
   }
@@ -135,9 +158,13 @@ export class Store {
   }
   private queue(p: Pending): void {
     if (p.op !== 'clear') this.pending = this.pending.filter((q) => q.op === 'clear' || q.id !== p.id)   // one pending write per item, the newest
-    this.pending.push(p); this.save(); void this.flush()
+    this.pending.push(p); this.failed = null; this.save(); void this.flush()
   }
-  private save(): void { try { if (this.pending.length) localStorage.setItem(PENDING_KEY, JSON.stringify(this.pending)); else localStorage.removeItem(PENDING_KEY) } catch { /* private */ } }
+  private save(): void {
+    const pending = [...this.pending.filter((p) => p.op === 'clear' || !this.waiting.has(p.id)), ...[...this.waiting].map(([id, item]): Pending => ({ op: 'put', id, item }))]
+    try { if (pending.length) localStorage.setItem(PENDING_KEY, JSON.stringify(pending)); else localStorage.removeItem(PENDING_KEY) } catch { this.failed = 'browser storage is full · keep this tab open' }
+    this.status()
+  }
   /** the tab is going: what is still debouncing joins the queue, so it goes out on the next open */
   private park(): void {
     for (const [id, it] of this.waiting) { this.pending = this.pending.filter((q) => q.op === 'clear' || q.id !== id); this.pending.push({ op: 'put', id, item: it }) }
@@ -147,18 +174,31 @@ export class Store {
     if (this.sending || !this.door) return
     this.sending = true
     try {
-      while (this.pending.length) {
-        const p = this.pending[0]
+      while (this.pending.length && this.door) {
+        // Retain rejected edits, but let independent work save. A rejected clear remains an ordering barrier.
+        const p = this.pending.find(p => !p.error || p.op === 'clear')
+        if (!p || p.error) break
         const url = p.op === 'clear' ? `${STORE}/show/items` : `${STORE}/show/items/${encodeURIComponent(p.id)}`
         const r = await fetch(url, { method: p.op === 'put' ? 'PUT' : 'DELETE', headers: this.headers(), body: p.op === 'put' ? JSON.stringify(strip(p.item as ShowItem)) : undefined })
         if (r.status === 401) { const j = (await r.json().catch(() => ({}))) as { error?: string }; bus.toast(`not saved · ${j.error ?? 'the door'}`, 'bad'); this.leave(); return }
-        if (r.status === 413) { bus.toast('not saved · that one is too big for the store', 'bad'); this.pending.shift(); this.save(); continue }
+        if (r.status === 429) { this.failed = 'the store is busy · retry saves shortly'; this.status(); return }
+        if (r.status >= 400 && r.status < 500) {
+          const j = await r.json().catch(() => ({})) as { error?: string }
+          if (this.pending.includes(p)) { p.error = j.error ?? `the store said ${r.status}`; this.save(); bus.toast(`not saved · ${p.error} · edit retained`, 'bad') }
+          continue
+        }
         if (!r.ok) throw new Error(String(r.status))
-        this.pending.shift(); this.save(); this.away = false          // the version moves only on reads: a write by the other person just before mine must still come in
+        this.pending = this.pending.filter((q) => q !== p); this.away = false; this.failed = null; this.save() // Only remove the request that completed; a newer edit may have replaced it.
       }
     } catch { this.gone() } finally { this.sending = false }
   }
-  private gone(): void { if (!this.away) { this.away = true; bus.toast('not saved · the store is away', 'warn') } }
+  async retry(): Promise<void> {
+    if (!this.door) return
+    this.park(); for (const p of this.pending) delete p.error
+    this.failed = null; this.save(); await this.flush()
+  }
+  private gone(): void { if (!this.away) { this.away = true; bus.toast('the store is away · pending edits stay in this browser', 'warn') } this.status() }
+  dispose(): void { this.park(); window.removeEventListener('pagehide', this.onPageHide) }
 
   /** every 10 s: send what waits, then bring in what changed */
   async tick(): Promise<Changes | null> {

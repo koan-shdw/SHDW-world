@@ -1,0 +1,11 @@
+const fs = require('node:fs');
+const path = require('node:path');
+const assert = require('node:assert/strict');
+const data = path.resolve(__dirname, '../dist/data');
+const files = fs.readdirSync(data, { recursive: true }).filter(f => fs.statSync(path.join(data, f)).isFile());
+assert.ok(!files.some(f => /\.(zip|py|md|npy)$/i.test(f)), 'source archives/scripts must not be published');
+assert.ok(!fs.existsSync(path.join(data, 'level/scan.glb')), 'scan source must not be published');
+assert.ok(fs.existsSync(path.join(data, 'level/level.json')));
+const library = JSON.parse(fs.readFileSync(path.join(data, 'art/index.json')));
+for (const a of library.items) for (const file of [a.file, a.model].filter(Boolean)) assert.ok(fs.existsSync(path.join(data, 'art', file)), `missing runtime artwork: ${file}`);
+console.log(`Runtime data verified: ${files.length} files, ${files.reduce((n, f) => n + fs.statSync(path.join(data, f)).size, 0)} bytes`);

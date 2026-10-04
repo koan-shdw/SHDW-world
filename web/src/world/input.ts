@@ -1,14 +1,19 @@
 // Input (GAME.md §1): raw pointer lock, verbs on keys, a click buffer, the browser's context menu suppressed.
 // Look applies on the mouse event itself, never a frame late. One sensitivity number. No smoothing, no acceleration.
-import { bus } from '../bus'
+import { bus, type PlaySettings } from '../bus'
 
 export type Verb = 'do' | 'touch' | 'putback' | 'turn' | 'turnback' | 'cycleNext' | 'cyclePrev' | 'map' | 'menu' | 'back' | 'hands' | 'select' | 'undo' | 'redo' | 'remove' | 'debug' | 'keys' | 'gap'
-export interface PlaySettings { sensitivity: number; fov: number; reduceMotion: boolean; headBob: boolean }
 const PLAY_KEY = 'shdw-world-play'
-export const defaultPlay = (): PlaySettings => ({ sensitivity: 1.0, fov: 75, reduceMotion: false, headBob: true })
+export const defaultPlay = (): PlaySettings => ({ sensitivity: 1.0, fov: 75, reduceMotion: window.matchMedia?.('(prefers-reduced-motion: reduce)').matches ?? false, headBob: true, touchControls: window.matchMedia?.('(pointer: coarse)').matches ?? false })
 
 export class Input {
   readonly keys = new Set<string>()
+  private lifetime = new AbortController()
+  private keyboard = new Set<string>()
+  private padKeys = new Set<string>()
+  private touchKeys = new Set<string>()
+  private touchActive = false
+  get active(): boolean { return this.locked || this.touchActive }
   settings: PlaySettings = defaultPlay()
   locked = false
   rawSupported: boolean | null = null
@@ -29,33 +34,37 @@ export class Input {
   static BUFFER_MS = 120
 
   constructor(private dom: HTMLElement) {
+    const listen = <K extends keyof DocumentEventMap>(target: EventTarget, type: K, fn: (e: DocumentEventMap[K]) => void, options: AddEventListenerOptions = {}) => target.addEventListener(type, fn as EventListener, { ...options, signal: this.lifetime.signal })
     try { const s = localStorage.getItem(PLAY_KEY); if (s) Object.assign(this.settings, JSON.parse(s)) } catch { /* private */ }
-    document.addEventListener('pointerlockchange', () => { this.locked = document.pointerLockElement === dom; if (!this.locked) this.keys.clear(); this.onLockChange?.(this.locked) })
-    document.addEventListener('mousemove', (e) => {
+    listen(document, 'pointerlockchange', () => { this.locked = document.pointerLockElement === dom; if (!this.locked) this.clearMovement(); this.onLockChange?.(this.active) })
+    listen(document, 'mousemove', (e) => {
       if (!this.locked) { if (this.ringOpen) this.aimAbs(e.clientX, e.clientY); return }
       if (this.ringOpen) { this.ringVec.x = Math.max(-140, Math.min(140, this.ringVec.x + e.movementX)); this.ringVec.y = Math.max(-140, Math.min(140, this.ringVec.y + e.movementY)); bus.emit('ring_aim', { x: this.ringVec.x, y: this.ringVec.y }); return }
       this.onLook?.(e.movementX * Input.BASE_LOOK * this.settings.sensitivity, e.movementY * Input.BASE_LOOK * this.settings.sensitivity)
     })
-    document.addEventListener('contextmenu', (e) => { e.preventDefault() })            // the game owns the right button
-    dom.addEventListener('mousedown', (e) => {
+    listen(document, 'contextmenu', (e) => { e.preventDefault() })            // the game owns the right button
+    listen(dom, 'mousedown', (e) => {
+      if (this.settings.touchControls) return
       if (!this.locked) { if (e.button === 0) void this.lock(); return }
       if (e.button === 0) { this.clickAt = performance.now(); this.onVerb?.('do', e) }
       else if (e.button === 2) this.onVerb?.('putback', e)
     })
-    dom.addEventListener('wheel', (e) => { if (!this.locked) return; e.preventDefault(); this.onWheel?.(e.deltaY > 0 ? 1 : -1, e.shiftKey) }, { passive: false })
-    window.addEventListener('keydown', (e) => this.key(e))
-    window.addEventListener('keyup', (e) => this.keys.delete(e.code))
-    window.addEventListener('blur', () => this.keys.clear())
+    listen(dom, 'wheel', (e) => { if (!this.locked) return; e.preventDefault(); this.onWheel?.(e.deltaY > 0 ? 1 : -1, e.shiftKey) }, { passive: false })
+    listen(window, 'keydown', (e) => this.key(e))
+    listen(window, 'keyup', (e) => { this.keyboard.delete(e.code); this.syncKeys() })
+    listen(window, 'blur', () => { this.setTouchActive(false); this.clearMovement() })
+    listen(document, 'visibilitychange', () => { if (document.hidden) { this.setTouchActive(false); this.clearMovement() } })
   }
 
   private key(e: KeyboardEvent): void {
     const t = e.target as HTMLElement | null
-    if (t && (t.tagName === 'INPUT' || t.tagName === 'TEXTAREA' || t.isContentEditable)) return
     if (e.code === 'Escape') { this.onVerb?.('back', e); return }        // esc = back out of a ring, the map or the menu; never opens the menu (owner 09-07)
+    if (t && (t.tagName === 'INPUT' || t.tagName === 'SELECT' || t.tagName === 'TEXTAREA' || t.isContentEditable)) return
     if (e.code === 'Backquote') { this.onVerb?.('debug', e); return }
     if ((e.ctrlKey || e.metaKey) && e.code === 'KeyZ') { e.preventDefault(); this.onVerb?.(e.shiftKey ? 'redo' : 'undo', e); return }
-    this.keys.add(e.code)
-    if (!this.locked) return
+    if (this.ringOpen && /^Digit[0-9]$/.test(e.code)) { const n = Number(e.code.slice(5)); this.onSlot?.(n === 0 ? 9 : n - 1); return }
+    if (!this.active) return
+    this.keyboard.add(e.code); this.keys.add(e.code)
     switch (e.code) {
       case 'KeyE': this.onVerb?.('touch', e); break
       case 'KeyQ': this.onVerb?.('putback', e); break
@@ -82,22 +91,44 @@ export class Input {
   closeRing(): void { this.ringOpen = false }
   private aimAbs(x: number, y: number): void { bus.emit('ring_aim', { x: x - this.ringCentre.x, y: y - this.ringCentre.y }) }
 
+  private syncKeys(): void { this.keys.clear(); for (const source of [this.keyboard, this.padKeys, this.touchKeys]) for (const key of source) this.keys.add(key) }
+  private clearMovement(): void { this.keyboard.clear(); this.padKeys.clear(); this.touchKeys.clear(); this.keys.clear() }
+  setTouchActive(on: boolean): void {
+    this.touchActive = on && this.settings.touchControls
+    if (!this.touchActive) this.clearMovement()
+    this.onLockChange?.(this.active)
+  }
+  touchMove(x: number, y: number): void {
+    this.touchKeys.clear()
+    if (this.touchActive && !this.ringOpen) {
+      if (y < -.18) this.touchKeys.add('KeyW'); if (y > .18) this.touchKeys.add('KeyS')
+      if (x < -.18) this.touchKeys.add('KeyA'); if (x > .18) this.touchKeys.add('KeyD')
+    }
+    this.syncKeys()
+  }
+  touchLook(dx: number, dy: number): void {
+    if (this.touchActive && !this.ringOpen) this.onLook?.(dx * Input.BASE_LOOK * this.settings.sensitivity, dy * Input.BASE_LOOK * this.settings.sensitivity)
+  }
+
   /** the pad (GAME.md: controller ready): left stick walks, right stick looks or aims the ring, A do, B put back, X touch, Y turn, bumpers cycle, start menu, back map */
   pollPad(dt: number): void {
     const pads = navigator.getGamepads ? navigator.getGamepads() : []
-    const pad = Array.from(pads).find((p) => p && p.connected); if (!pad) { this.padActive = false; return }
+    this.padKeys.clear()
+    this.syncKeys()
+    const pad = Array.from(pads).find((p) => p && p.connected); if (!pad) { this.padActive = false; this.padPrev.clear(); return }
     const dz = (v: number) => (Math.abs(v) < 0.18 ? 0 : v)
     const lx = dz(pad.axes[0] ?? 0), ly = dz(pad.axes[1] ?? 0), rx = dz(pad.axes[2] ?? 0), ry = dz(pad.axes[3] ?? 0)
-    const walk = (code: string, on: boolean) => { if (on) this.keys.add(code); else this.keys.delete(code) }
+    const walk = (code: string, on: boolean) => { if (on && this.active) { this.padKeys.add(code); this.keys.add(code) } }
     walk('KeyW', ly < -0.3); walk('KeyS', ly > 0.3); walk('KeyA', lx < -0.3); walk('KeyD', lx > 0.3); walk('ShiftLeft', !!pad.buttons[10]?.pressed)
     if (this.ringOpen) { if (Math.hypot(rx, ry) > 0.3) bus.emit('ring_aim', { x: rx * 120, y: ry * 120 }) }
-    else if (rx || ry) this.onLook?.(rx * 2.4 * dt * this.settings.sensitivity, ry * 2.0 * dt * this.settings.sensitivity)
+    else if (this.active && (rx || ry)) this.onLook?.(rx * 2.4 * dt * this.settings.sensitivity, ry * 2.0 * dt * this.settings.sensitivity)
     const edge = (i: number, verb: Verb) => { const now = !!pad.buttons[i]?.pressed; const was = this.padPrev.get(i) ?? false; this.padPrev.set(i, now); if (now && !was) { this.padActive = true; this.onVerb?.(verb, new MouseEvent('mousedown')) } }
     edge(0, 'do'); edge(1, 'putback'); edge(2, 'touch'); edge(3, 'turn'); edge(4, 'cyclePrev'); edge(5, 'cycleNext'); edge(9, 'menu'); edge(8, 'map')
   }
 
   /** raw movement when the browser has it (Chromium, Windows/macOS), plain lock otherwise. Needs a user gesture */
   async lock(): Promise<void> {
+    if (this.settings.touchControls) { this.setTouchActive(true); return }
     if (this.locked) return
     const el = this.dom as HTMLElement & { requestPointerLock: (o?: { unadjustedMovement?: boolean }) => Promise<void> | undefined }
     try {
@@ -109,7 +140,8 @@ export class Input {
       else if ((e as Error).name !== 'SecurityError') { try { await (el.requestPointerLock() as Promise<void> | undefined) } catch { /* denied */ } }
     }
   }
-  release(): void { if (document.pointerLockElement === this.dom) document.exitPointerLock() }
+  dispose(): void { this.release(); this.lifetime.abort(); this.clearMovement() }
+  release(): void { this.setTouchActive(false); if (document.pointerLockElement === this.dom) document.exitPointerLock() }
 
   /** the buffered click, if one landed within the window; consuming it clears it */
   takeClick(): boolean { const ok = this.clickAt > 0 && performance.now() - this.clickAt <= Input.BUFFER_MS; if (ok) this.clickAt = 0; return ok }

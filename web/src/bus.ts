@@ -8,9 +8,9 @@ export type Quality = 'full' | 'balanced' | 'low'
 export type FxKey = 'lut' | 'sky' | 'plants' | 'glass' | 'surface' | 'outline' | 'dither' | 'smaa'
 export type FxState = Record<FxKey, boolean>
 export type Who = 'KOAN' | 'YOZO'
-export interface HistoryRow { ts: number; who: string; op: string; id: string; item: Record<string, unknown> | null }
+export interface HistoryRow { cursor: number; ts: number; who: string; op: string; id: string; item: Record<string, unknown> | null }
 
-export interface PlaySettings { sensitivity: number; fov: number; reduceMotion: boolean; headBob: boolean }
+export interface PlaySettings { sensitivity: number; fov: number; reduceMotion: boolean; headBob: boolean; touchControls: boolean }
 
 
 export interface WalkSnapshot { level: string; levelName: string; x: number; z: number; onStair: boolean; locked: boolean }
@@ -24,6 +24,12 @@ export interface RoomInfo { hangWalls: number; stairs: number; doors: number; fl
 export interface LoaderState { active: boolean; done: number; total: number; text: string }
 
 export interface Events {
+  save_state: { pending: number; state: 'saved' | 'saving' | 'offline' | 'error'; error: string | null }
+  save_retry: Record<string, never>
+  touch_session: { active: boolean }
+  touch_move: { x: number; y: number }
+  touch_look: { dx: number; dy: number }
+  touch_verb: { verb: 'do' | 'touch' | 'putback' | 'map' | 'back' }
   // world → ui
   world_ready: RoomInfo
   world_failed: { message: string }
@@ -36,6 +42,7 @@ export interface Events {
   ring_aim: { x: number; y: number }            // the ring's aim vector, from mouse deltas or the right stick
   ring_confirm: Record<string, never>            // click / A while the ring is open: do the hot slice
   ring_key: { n: number }                          // 1-9 while a ring is open: that slice
+  ring_close: Record<string, never>
   touch: { touch: TouchSnapshot | null }
   look: { look: Look }
   fx: { state: FxState }
@@ -51,6 +58,7 @@ export interface Events {
   drop_files: { files: File[] }
   push_local: { id: string }
   update_art: { id: string; patch: { title?: string; h?: number; w?: number; d?: number } }   // owner 09-07: edit an uploaded work's title and size
+  art_updated: { id: string }
   note_open: Record<string, never>                     // SHOW.md §6: the note slot: open the field
   note_field: { show: boolean }                        // world → UI: the field under the crosshair
   note_text: { text: string }                          // UI → world: enter: the note is in your hands
@@ -73,6 +81,7 @@ export interface Events {
   remove_local: { id: string }
   set_guides: { patch: Partial<Guides> }
   set_sculpt: { patch: Partial<SculptLook> }
+  custom_texture: { data: string; cm: number }
   ui_ring: { open: boolean; x: number; y: number }          // a ring opened by the UI with the mouse free (the bar)
   repo_save: { name: string; token: string }
   repo_saved: { ok: boolean; url?: string; error?: string }

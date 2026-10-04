@@ -1,23 +1,27 @@
 import { defineConfig, type Plugin } from 'vite'
 import { svelte } from '@sveltejs/vite-plugin-svelte'
 import { existsSync, mkdirSync, copyFileSync, readdirSync, statSync, createReadStream, writeFileSync } from 'node:fs'
-import { join, resolve, extname } from 'node:path'
+import { join, resolve, extname, relative } from 'node:path'
 
 // The repo's data folders (level/, art/, layouts/) are served under /data/ in dev
 // and copied into dist/data/ at build. scan.clean.glb (the 12 MB compress input) is skipped.
 const ROOT = resolve(__dirname, '..')
 const DATA_DIRS = ['level', 'art', 'layouts', 'textures']
-const SKIP = new Set(['scan.clean.glb', 'make_level.py'])
+const runtimeAsset = (file: string): boolean => {
+  const rel = relative(ROOT, file).replaceAll('\\', '/')
+  return rel === 'level/level.json' || /^layouts\/[^/]+\.json$/.test(rel) || rel === 'art/index.json'
+    || /^art\/(?!.*(?:^|\/)_[^/]*\/).+\.(?:glb|jpg|jpeg|png|webp)$/.test(rel)
+    || /^textures\/(?:[^/]+\.(?:jpg|jpeg|png|webp|cube)|ktx2\/[^/]+\.ktx2)$/.test(rel)
+}
 const MIME: Record<string, string> = { '.json': 'application/json', '.glb': 'model/gltf-binary', '.jpg': 'image/jpeg', '.jpeg': 'image/jpeg', '.png': 'image/png', '.webp': 'image/webp', '.ktx2': 'image/ktx2', '.drc': 'application/octet-stream' }
 
 function copyDir(src: string, dst: string): void {
   if (!existsSync(src)) return
   mkdirSync(dst, { recursive: true })
   for (const f of readdirSync(src)) {
-    if (SKIP.has(f)) continue
     const s = join(src, f), d = join(dst, f)
     if (statSync(s).isDirectory()) copyDir(s, d)
-    else copyFileSync(s, d)
+    else if (runtimeAsset(s)) copyFileSync(s, d)
   }
 }
 
@@ -55,9 +59,11 @@ function dataDirs(): Plugin {
           return
         }
         const m = url.match(/^\/data\/([a-z]+)\/(.+)$/)
-        if (!m || !DATA_DIRS.includes(m[1]) || m[2].includes('..')) return next()
-        const file = join(ROOT, m[1], decodeURIComponent(m[2]))
-        if (!existsSync(file) || statSync(file).isDirectory()) { res.statusCode = 404; res.end('not found'); return }
+        if (!m || !DATA_DIRS.includes(m[1])) return next()
+        let file: string
+        try { file = resolve(ROOT, m[1], decodeURIComponent(m[2])) } catch { res.statusCode = 400; res.end('bad path'); return }
+        const rel = relative(resolve(ROOT, m[1]), file)
+        if (rel.startsWith('..') || !runtimeAsset(file) || !existsSync(file) || statSync(file).isDirectory()) { res.statusCode = 404; res.end('not found'); return }
         res.setHeader('Content-Type', MIME[extname(file)] ?? 'application/octet-stream')
         res.setHeader('Content-Length', String(statSync(file).size))
         createReadStream(file).pipe(res)

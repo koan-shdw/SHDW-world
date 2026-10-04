@@ -11,11 +11,11 @@
     r.onload = () => { const img = new Image(); img.onload = () => res({ data: r.result as string, w: img.naturalWidth, h: img.naturalHeight }); img.onerror = () => rej(new Error('not an image')); img.src = r.result as string }
     r.onerror = () => rej(r.error); r.readAsDataURL(f)
   })
-  bus.on('model_probed', ({ key, w, h, d, error }) => {
+  $effect(() => bus.on('model_probed', ({ key, w, h, d, error }) => {
     const p = pending.find((x) => x.key === key); if (!p) return
     if (error || !h) { bus.toast(`${p.name}: not a model I can read`, 'warn'); pending = pending.filter((x) => x.key !== key); return }
     p.probing = false; p.mw = w; p.mh = h; p.md = d; p.h = h; p.w = w; p.d = d
-  })
+  }))
   const addModel = async (f: File) => {
     const data = await readData(f); const key = seq++
     pending.push({ key, name: f.name, data, iw: 1, ih: 1, title: f.name.replace(/\.[a-z0-9]+$/i, ''), h: 0, w: 0, d: 0, edge: 'wrap', kind: 'sculpture', probing: true })
@@ -52,15 +52,15 @@
     <div class="legend">new work · type h w d in cm · enter</div>
     {#each pending as p (p.key)}
       <div class="addrow">
-        {#if p.kind === 'sculpture'}<div class="thumb model">{p.probing ? '…' : `${p.mw} × ${p.mh} × ${p.md}`}</div>{:else}<img class="thumb" src={p.data} alt={p.name} />{/if}
+        {#if p.kind === 'sculpture'}<div class="thumb model">{p.probing ? '…' : `${p.mh} × ${p.mw} × ${p.md}`}</div>{:else}<img class="thumb" src={p.data} alt={p.name} />{/if}
         <div class="fields">
-          <input type="text" placeholder="title" bind:value={p.title} onkeydown={(e) => { if (e.key === 'Enter') commit(p) }} />
-          <input type="number" placeholder="h cm" bind:value={p.h} oninput={() => onH(p)} onkeydown={(e) => { if (e.key === 'Enter') commit(p) }} />
-          <input type="number" placeholder="w cm" bind:value={p.w} onkeydown={(e) => { if (e.key === 'Enter') commit(p) }} />
-          <input type="number" placeholder="d cm" bind:value={p.d} onkeydown={(e) => { if (e.key === 'Enter') commit(p) }} />
-          {#if p.kind === 'painting'}<select bind:value={p.edge}><option value="wrap">wrap</option><option value="white">white</option></select>{/if}
+          <label class="field title">title<input type="text" placeholder="title" bind:value={p.title} onkeydown={(e) => { if (e.key === 'Enter') commit(p) }} /></label>
+          <label class="field ">height cm<input type="number" placeholder="h cm" bind:value={p.h} oninput={() => onH(p)} onkeydown={(e) => { if (e.key === 'Enter') commit(p) }} /></label>
+          <label class="field ">width cm<input type="number" placeholder="w cm" bind:value={p.w} onkeydown={(e) => { if (e.key === 'Enter') commit(p) }} /></label>
+          <label class="field ">depth cm<input type="number" placeholder="d cm" bind:value={p.d} onkeydown={(e) => { if (e.key === 'Enter') commit(p) }} /></label>
+          {#if p.kind === 'painting'}<select aria-label="painting edge" bind:value={p.edge}><option value="wrap">wrap</option><option value="white">white</option></select>{/if}
           <button class="chip" onclick={() => commit(p)}>add</button>
-          <button class="chip" onclick={() => (pending = pending.filter((x) => x.key !== p.key))}>×</button>
+          <button class="chip" aria-label="cancel adding this work" onclick={() => (pending = pending.filter((x) => x.key !== p.key))}>×</button>
         </div>
       </div>
     {/each}

@@ -1,11 +1,14 @@
 <script lang="ts">
   // Settings (the button top right; esc backs out): controls · art · file · keys · history. The login is the intro screen. Nothing else (owner 09-06). Looks and quality live in the debug panel (backtick).
   import Row from './Row.svelte'
+  import { onMount } from 'svelte'
   import AddPanel from './AddPanel.svelte'
   import { bus } from '../bus'
   import { ui, nameOf } from './state.svelte'
   let { base }: { base: string } = $props()
-  const tabs = $derived(ui.door.open ? ['controls', 'art', 'file', 'keys', 'history'] : ['controls'])   // SHOW.md §2, §5, §7; the login is the intro screen
+  const tabs = $derived(ui.door.open ? ['controls', 'art', 'file', 'keys', 'history'] : ['controls', 'keys'])
+  let dialog: HTMLDialogElement
+  onMount(() => { const previous = document.activeElement as HTMLElement | null; dialog.showModal(); return () => { dialog.close(); previous?.focus() } })
   const when = (ts: number) => { const d = new Date(ts); const today = new Date().toDateString() === d.toDateString(); return (today ? '' : `${d.getDate()}/${d.getMonth() + 1} `) + d.toTimeString().slice(0, 5) }
   const what = (r: { op: string; item: Record<string, unknown> | null }) => {
     const it = r.item ?? {}; const note = it.note as { text?: string } | undefined
@@ -20,17 +23,19 @@
   let editing = $state<string | null>(null)
   let form = $state({ title: '', h: 0, w: 0, d: 0 })
   const editArt = (a: NonNullable<typeof ui.art>['library'][number]) => { if (editing === a.id) { editing = null; return } editing = a.id; form = { title: a.title, h: a.h, w: a.w, d: a.d } }
-  const saveArt = () => { if (!editing) return; bus.emit('update_art', { id: editing, patch: { title: form.title, h: Number(form.h), w: Number(form.w), d: Number(form.d) } }); editing = null }
+  const saveArt = () => { if (!editing) return; bus.emit('update_art', { id: editing, patch: { title: form.title, h: Number(form.h), w: Number(form.w), d: Number(form.d) } }) }
+  $effect(() => bus.on('art_updated', ({ id }) => { if (editing === id) editing = null }))
   const removeArt = (a: NonNullable<typeof ui.art>['library'][number]) => { if (confirm(`remove ${a.title} from the library, for everyone?`)) bus.emit('remove_local', { id: a.id }) }
   $effect(() => { if (!tabs.includes(ui.menuTab)) ui.menuTab = 'controls' })
   let eye = $state(160)
   $effect(() => { if (ui.room) eye = ui.room.eyeCm })
   let loadI = $state<HTMLInputElement>()
   const count = $derived(ui.art?.layout.items.length ?? 0)
-  bus.on('file_ready', (f) => {
+  $effect(() => bus.on('file_ready', (f) => {
     const a = document.createElement('a'); a.href = URL.createObjectURL(new Blob([f.json], { type: 'application/json' })); a.download = f.name; a.click()
+    setTimeout(() => URL.revokeObjectURL(a.href), 1000)
     if (f.skipped.length) bus.toast(`${f.skipped.length} image(s) too big to travel: ${f.skipped.join(', ')}`, 'warn')
-  })
+  }))
   const load = async (f: File) => {
     const text = await f.text()
     if (count && !confirm(`replace the draft (${count} works) with ${f.name}?`)) return
@@ -38,13 +43,13 @@
   }
   const back = () => bus.emit('menu_close', {})
   let token = $state('')
-  try { token = localStorage.getItem('shdw-world-token') ?? '' } catch { /* private */ }
-  const saveRepo = () => { try { localStorage.setItem('shdw-world-token', token) } catch { /* private */ } bus.emit('repo_save', { name: ui.art?.layout.name ?? 'layout', token }) }
+  try { localStorage.removeItem('shdw-world-token') } catch { /* private */ }
+  const saveRepo = () => { bus.emit('repo_save', { name: ui.art?.layout.name ?? 'layout', token }); token = '' }
   const copy = (s: string) => { void navigator.clipboard?.writeText(s) }
   const num = (e: Event) => Number((e.currentTarget as HTMLInputElement).value)
 </script>
 
-<div class="options" role="dialog" aria-label="settings">
+<dialog class="options" bind:this={dialog} aria-label="settings" oncancel={(e) => { e.preventDefault(); back() }}>
   <div class="panel">
     <div class="head"><img class="logo" src="{base}brand/logo.png" alt="CULT 2026" /><span class="show">CULT by YOZO · presented by SHDW.gallery</span></div>
     <div class="body">
@@ -60,6 +65,8 @@
           <Row label="eye height cm"><input type="number" min="100" max="220" step="1" bind:value={eye} onchange={() => bus.emit('set_eye', { cm: Number(eye) })} /></Row>
           <Row label="head bob"><input type="checkbox" checked={ui.play.headBob} onchange={(e) => bus.emit('set_play', { patch: { headBob: (e.currentTarget as HTMLInputElement).checked } })} /></Row>
           <Row label="reduce motion"><input type="checkbox" checked={ui.play.reduceMotion} onchange={(e) => bus.emit('set_play', { patch: { reduceMotion: (e.currentTarget as HTMLInputElement).checked } })} /></Row>
+          <Row label="touch controls"><input type="checkbox" checked={ui.play.touchControls} onchange={(e) => bus.emit('set_play', { patch: { touchControls: (e.currentTarget as HTMLInputElement).checked } })} /></Row>
+          {#if ui.play.touchControls}<div class="note">drag the left pad to walk · drag the right area to look · use the door button when one is within reach</div>{/if}
         {:else if ui.menuTab === 'art'}
           <div class="chips"><button class="chip" onclick={() => add?.open()}>choose files</button><span class="note">or drop images or .glb anywhere · title, h w d in cm, enter · it goes to the store, for everyone</span></div>
           <AddPanel bind:this={add} />
@@ -76,10 +83,10 @@
               </div>
               {#if editing === a.id}
                 <div class="artrow edit">
-                  <input type="text" placeholder="title" bind:value={form.title} onkeydown={(e) => { if (e.key === 'Enter') saveArt() }} />
-                  <input type="number" placeholder="h cm" bind:value={form.h} onkeydown={(e) => { if (e.key === 'Enter') saveArt() }} />
-                  <input type="number" placeholder="w cm" bind:value={form.w} onkeydown={(e) => { if (e.key === 'Enter') saveArt() }} />
-                  <input type="number" placeholder="d cm" bind:value={form.d} onkeydown={(e) => { if (e.key === 'Enter') saveArt() }} />
+                  <label class="field title">title<input type="text" bind:value={form.title} onkeydown={(e) => { if (e.key === 'Enter') saveArt() }} /></label>
+                  <label class="field">height cm<input type="number" min="0.1" step="any" bind:value={form.h} onkeydown={(e) => { if (e.key === 'Enter') saveArt() }} /></label>
+                  <label class="field">width cm<input type="number" min="0.1" step="any" bind:value={form.w} onkeydown={(e) => { if (e.key === 'Enter') saveArt() }} /></label>
+                  <label class="field">depth cm<input type="number" min="0" step="any" bind:value={form.d} onkeydown={(e) => { if (e.key === 'Enter') saveArt() }} /></label>
                   <button class="chip" onclick={saveArt}>save</button>
                 </div>
               {/if}
@@ -93,27 +100,33 @@
             <button class="chip" onclick={() => { if (confirm('take every work off the walls?')) bus.emit('clear_draft', {}) }}>clear</button>
           </div>
           <input type="file" accept=".json" hidden bind:this={loadI} onchange={() => { if (loadI?.files?.[0]) void load(loadI.files[0]); if (loadI) loadI.value = '' }} />
-          <div class="note">{count} works · saved in this browser</div>
+          <div class="note">{count} works · the shared show saves automatically. Pending edits stay in this browser until the store accepts them.</div>
+          {#if ui.save.error}<div class="note" role="status">{ui.save.error} · edits retained</div>{/if}
+          {#if ui.save.pending}<div class="chips"><button class="chip" onclick={() => bus.emit('save_retry', {})}>retry saves</button></div>{/if}
+          <div class="note">A layout file contains placements and artwork references. Keep the original uploaded files separately for a complete backup.</div>
           <div class="legend">the repo</div>
           <Row label="github token"><input type="password" placeholder="ghp_…" bind:value={token} /></Row>
           <div class="chips"><button class="chip" onclick={saveRepo} disabled={!token}>save to repo</button>{#if ui.repo.url}<button class="chip" onclick={() => copy(ui.repo.url)}>copy share link</button>{/if}</div>
           {#if ui.repo.url}<div class="note num">{ui.repo.url}</div>{/if}
           {#if ui.repo.error}<div class="note" style="color: var(--bad)">{ui.repo.error}</div>{/if}
-          <div class="note">a layout in the repo opens at ?layout=name · Yozo saves a file, you drop it here, save to repo, send the link</div>
+          <div class="note">a layout in the repo opens at ?layout=name · uploaded artwork stays linked to the store · the token is used once and is not saved</div>
         {:else if ui.menuTab === 'history'}
           <div class="legend">every save · newest first{ui.history.loading ? ' · …' : ''}</div>
           <div class="artlist">
-            {#each ui.history.rows as r (r.ts + r.op + r.id)}
+            {#each ui.history.rows as r (r.cursor)}
               <div class="artrow"><span class="num">{when(r.ts)}</span><b class="who">{r.who}</b><span>{what(r)}</span></div>
             {/each}
             {#if !ui.history.rows.length && !ui.history.loading}<div class="note">nothing yet</div>{/if}
           </div>
-          {#if !ui.history.done && ui.history.rows.length}<div class="chips"><button class="chip" onclick={() => bus.emit('history_get', { before: ui.history.rows[ui.history.rows.length - 1].ts })}>more</button></div>{/if}
+          {#if !ui.history.done && ui.history.rows.length}<div class="chips"><button class="chip" onclick={() => bus.emit('history_get', { before: ui.history.rows[ui.history.rows.length - 1].cursor })}>more</button></div>{/if}
         {:else}
           <table class="keys">
             <tbody>
+              {#if ui.play?.touchControls}<tr><td>left pad</td><td>drag to walk · release to stop</td></tr><tr><td>right area</td><td>drag to look · tap a door button to open or close it</td></tr>{/if}
               <tr><td>w a s d</td><td>walk · shift run</td></tr>
               <tr><td>mouse</td><td>look</td></tr>
+              <tr><td>e</td><td>open or close a nearby door</td></tr>
+              {#if ui.door.open}
               <tr><td>1-9 0 · [ ]</td><td>pick a work · again puts it back</td></tr>
               <tr><td>click</td><td>hang · place · open the ring on a work</td></tr>
               <tr><td>e</td><td>touch a work · a door</td></tr>
@@ -124,6 +137,7 @@
               <tr><td>arrows</td><td>on a work: nudge 1 cm · shift 10</td></tr>
               <tr><td>tab · delete</td><td>next hung work · take it down</td></tr>
               <tr><td>ctrl z</td><td>undo · shift redo</td></tr>
+              {/if}
               <tr><td>m</td><td>map</td></tr>
               <tr><td>esc</td><td>back · frees the mouse, click puts you back</td></tr>
             </tbody>
@@ -132,4 +146,4 @@
       </div>
     </div>
   </div>
-</div>
+</dialog>

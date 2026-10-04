@@ -4,7 +4,7 @@ import re, os, sys
 import numpy as np
 from PIL import Image
 sys.stdout.reconfigure(encoding="utf-8")
-src = open("web/src/level.ts", encoding="utf-8").read()
+src = open("web/src/world/room/level.ts", encoding="utf-8").read()
 maps = re.findall(r"'([a-z\-]+)': \{ file: '([a-z\-]+\.jpg)', tile: ([0-9.]+) \}", src)
 lines = []
 def ok(c, m): lines.append(("PASS  " if c else "FAIL  ") + m)
@@ -25,3 +25,4 @@ for name, file, tile in maps:
 os.makedirs("docs/audit", exist_ok=True)
 open("docs/audit/textures.txt", "w", encoding="utf-8").write("\n".join(lines) + "\n")
 print("\n".join(l for l in lines if not l.startswith("PASS")) or f"ALL PASS ({len(lines)})")
+sys.exit(1 if any(l.startswith("FAIL") for l in lines) else 0)

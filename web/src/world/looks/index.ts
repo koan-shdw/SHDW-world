@@ -26,6 +26,7 @@ export class Looks {
   readonly glass: Glass
   readonly surface: Surface
   private flatBackground: THREE.Color | THREE.Texture | null
+  private off: () => void
 
   constructor(private r: Renderer, room: THREE.Group, fogColor: THREE.Color, data: string) {
     try { const s = localStorage.getItem(FX_KEY); if (s) Object.assign(this.state, JSON.parse(s)) } catch { /* private */ }
@@ -42,7 +43,7 @@ export class Looks {
     this.glass = new Glass(mat('glass'))
     this.surface = new Surface(Object.keys(MAPS).map((n) => mat(n)))
     this.applyAll()
-    bus.on('set_fx', ({ key, on }) => this.set(key, on))
+    this.off = bus.on('set_fx', ({ key, on }) => this.set(key, on))
     bus.emit('fx', { state: { ...this.state } })
   }
 
@@ -70,5 +71,6 @@ export class Looks {
     this.surface.set(s.surface)
   }
 
-  update(t: number): void { this.void.update(t); this.plants.update(t) }
+  update(t: number, reduce = false): void { this.void.update(reduce ? 0 : t, reduce); this.plants.update(reduce ? 0 : t) }
+  dispose(): void { this.off() }
 }

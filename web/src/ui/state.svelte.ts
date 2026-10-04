@@ -3,7 +3,8 @@ import { bus, type Who, type HistoryRow, type Look, type RoomInfo, type WalkSnap
 
 export interface Toast { id: number; msg: string; kind: ToastKind }
 
-export const ui = $state({
+const initialState = () => ({
+  save: { pending: 0, state: 'saved' as 'saved' | 'saving' | 'offline' | 'error', error: null as string | null },
   look: 'textured' as Look,
   fx: null as FxState | null,
   quality: 'full' as Quality,
@@ -35,7 +36,11 @@ export const ui = $state({
   doorError: '',
 })
 
+export const ui = $state(initialState())
+export const resetUi = (): void => { Object.assign(ui, initialState()) }
+
 let toastSeq = 0
+bus.on('save_state', (s) => { ui.save = s })
 bus.on('look', ({ look }) => { ui.look = look })
 bus.on('fx', ({ state }) => { ui.fx = state })
 bus.on('quality', ({ quality }) => { ui.quality = quality })
@@ -57,7 +62,7 @@ bus.on('door_state', (d) => { ui.door = d; if (d.open) ui.doorError = '' })
 bus.on('door_result', (r) => { ui.doorError = r.ok ? '' : (r.error ?? 'wrong word') })
 let flashT = 0
 bus.on('widget_flash', ({ key }) => { ui.widgetFlash = key; clearTimeout(flashT); flashT = window.setTimeout(() => (ui.widgetFlash = null), 400) })
-bus.on('play', ({ settings }) => { ui.play = settings })
+bus.on('play', ({ settings }) => { ui.play = settings; document.documentElement.classList.toggle('reduce-motion', settings.reduceMotion) })
 bus.on('debug_toggle', () => { ui.debugShown = !ui.debugShown })
 bus.on('anchor', (a) => { ui.anchors[a.id] = a })
 bus.on('toast', ({ msg, kind, ms }) => {

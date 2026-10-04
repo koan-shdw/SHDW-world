@@ -11,7 +11,7 @@ import type { BitmapDone, BitmapJob } from './workers/bitmap.worker'
 export type Priority = 'room' | 'art' | 'sky' | 'yard'
 const ORDER: Record<Priority, number> = { room: 0, art: 1, sky: 2, yard: 3 }
 
-interface Job { prio: number; seq: number; run: () => Promise<void> }
+interface Job { prio: number; seq: number; run: () => Promise<void>; cancel: () => void }
 
 export class Loader {
   readonly ktx2: KTX2Loader
@@ -27,6 +27,7 @@ export class Loader {
   private done = 0; private total = 0
   private inflight = new Map<string, Promise<THREE.Texture>>()   // one fetch per URL, however many materials ask
   private text = ''
+  private disposed = false
   static LANES = 4
 
   constructor(readonly base: string, renderer: THREE.WebGLRenderer) {
@@ -48,9 +49,10 @@ export class Loader {
 
   /** the queue: `prio` orders, LANES run at once, the HUD bar follows */
   private enqueue<T>(prio: Priority, text: string, fn: () => Promise<T>): Promise<T> {
+    if (this.disposed) return Promise.reject(new Error('loader disposed'))
     this.total++
     return new Promise<T>((res, rej) => {
-      this.queue.push({ prio: ORDER[prio], seq: this.seq++, run: async () => { this.text = text; this.report(); try { res(await fn()) } catch (e) { rej(e as Error) } } })
+      this.queue.push({ prio: ORDER[prio], seq: this.seq++, cancel: () => rej(new Error('loader disposed')), run: async () => { this.text = text; this.report(); try { res(await fn()) } catch (e) { rej(e as Error) } } })
       this.queue.sort((a, b) => a.prio - b.prio || a.seq - b.seq)
       this.pump()
     })
@@ -62,6 +64,7 @@ export class Loader {
     }
   }
   private report(): void {
+    if (this.disposed) return
     const active = this.running > 0 || this.queue.length > 0
     bus.emit('loader', { active, done: this.done, total: this.total, text: active ? this.text : '' })
     if (!active) { this.done = 0; this.total = 0 }
@@ -115,6 +118,7 @@ export class Loader {
       const id = this.bitmapSeq++
       this.pendingBitmaps.set(id, { res, rej })
       const send = () => {
+        if (this.disposed) return
         const w = this.idle.pop()
         if (!w) { setTimeout(send, 8); return }
         const job: BitmapJob = { id, src }; w.postMessage(job)
@@ -123,5 +127,13 @@ export class Loader {
     })
   }
 
-  dispose(): void { for (const w of this.workers) w.terminate(); this.ktx2.dispose(); this.draco.dispose() }
+  dispose(): void {
+    this.disposed = true
+    for (const job of this.queue) job.cancel()
+    this.queue = []
+    for (const p of this.pendingBitmaps.values()) p.rej(new Error('loader disposed'))
+    this.pendingBitmaps.clear()
+    for (const w of this.workers) w.terminate()
+    this.ktx2.dispose(); this.draco.dispose()
+  }
 }

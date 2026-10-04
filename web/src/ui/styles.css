@@ -77,7 +77,7 @@ input[type='checkbox'] { width: 20px; height: 20px; accent-color: var(--accent);
 input[type='color'] { width: 44px; height: 30px; padding: 0 2px; background: var(--field); border: var(--ink); border-radius: 10px; cursor: pointer; }
 .legend { font-size: 11px; letter-spacing: 1px; color: var(--muted); font-weight: 800; }
 .row { display: flex; align-items: center; gap: 8px; }
-.row label { font-size: 14px; color: var(--body); flex: 1; }
+.row > span { font-size: 14px; color: var(--body); flex: 1; }
 .row.plinth { gap: 4px; }
 .row.plinth label { flex: 0 0 auto; font-size: 12px; color: var(--muted); }
 .row.plinth input { width: 56px; }
@@ -238,3 +238,65 @@ input[type='color'] { width: 44px; height: 30px; padding: 0 2px; background: var
 .intro .player.public { background: #26292f; }
 .intro .player input { width: 140px; padding: 8px 10px; border-radius: 8px; border: 0; background: rgba(255,255,255,.94); color: #0f0f0f; font: 700 14px var(--sans); text-align: center; text-transform: none; outline: none; }
 .intro .wrong { color: var(--bad); font-size: 14px; }
+
+/* Narrow panes, accessible forms and the shared save state. */
+.field { display: flex; flex-direction: column; gap: 4px; font-size: 11px; color: var(--muted); min-width: 0; }
+.field.title { flex: 1 1 100%; }
+.field input { max-width: 100%; }
+.artrow.edit { flex-wrap: wrap; }
+.options { margin: 0; padding: 0; border: 0; width: 100%; height: 100%; max-width: none; max-height: none; color: var(--txt-hi); }
+.options .body, .options .content { min-height: 0; min-width: 0; }
+.options .body { overflow: hidden; }
+.options .tabs { flex-shrink: 0; }
+.addpanel { width: 100%; box-sizing: border-box; }
+.intro .player { position: relative; border: 0; padding: 12px; box-sizing: border-box; }
+.intro .choose-player { width: 100%; flex: 1; background: transparent; border: 0; color: inherit; font: inherit; box-shadow: none; }
+.intro .choose-player:hover { transform: none; }
+.intro button { text-transform: none; }
+button:focus-visible, input:focus-visible, select:focus-visible, textarea:focus-visible { outline: 3px solid var(--accent); outline-offset: 3px; }
+.save-status { position: absolute; top: 58px; right: 18px; z-index: 20; max-width: 240px; text-align: right; color: var(--muted); font-size: 11px; }
+.save-status span { display: block; color: var(--warn); }
+.save-status button { margin-top: 6px; }
+.touch-controls { position: absolute; inset: 0; z-index: 18; pointer-events: none; }
+.touch-controls button { pointer-events: auto; min-height: 44px; }
+.touch-walk, .touch-look { touch-action: none; user-select: none; -webkit-user-select: none; }
+.touch-controls .touch-walk { position: absolute; left: max(18px, env(safe-area-inset-left)); bottom: max(105px, calc(env(safe-area-inset-bottom) + 85px)); width: 126px; height: 126px; padding: 0; border-radius: 50%; background: rgba(15,17,21,.58); border: 1px solid rgba(255,255,255,.28); }
+.touch-walk .touch-directions { position: absolute; inset: 15px; color: rgba(255,255,255,.5); line-height: 30px; letter-spacing: 8px; padding-left: 8px; }
+.touch-walk i { position: absolute; width: 42px; height: 42px; left: 41px; top: 41px; border-radius: 50%; background: var(--accent); opacity: .8; }
+.touch-label { position: absolute; bottom: -27px; left: 0; right: 0; font-size: 12px; color: var(--txt); }
+.touch-controls .touch-look { position: absolute; right: max(14px, env(safe-area-inset-right)); top: 110px; bottom: 230px; width: 44%; border: 1px dashed rgba(255,255,255,.15); border-radius: 18px; background: transparent; box-shadow: none; color: rgba(255,255,255,.65); }
+.touch-look span { position: absolute; left: 0; right: 0; bottom: 14px; font-size: 12px; }
+.touch-controls .touch-walk:hover, .touch-controls .touch-look:hover { transform: none; }
+.touch-buttons { position: absolute; right: max(16px, env(safe-area-inset-right)); bottom: max(102px, calc(env(safe-area-inset-bottom) + 82px)); display: flex; flex-direction: column; align-items: flex-end; gap: 8px; }
+.touch-map-close { position: absolute; z-index: 35; bottom: max(20px, env(safe-area-inset-bottom)); left: 50%; transform: translateX(-50%); min-height: 44px; }
+.minimap.touch-map { top: 80px; bottom: auto; left: max(18px, env(safe-area-inset-left)); width: 96px; height: 78px; opacity: .8; }
+.touch-controls.editor .touch-look { bottom: 310px; }
+.touch-controls.editor .touch-walk { bottom: max(140px, calc(env(safe-area-inset-bottom) + 120px)); }
+.touch-controls.editor .touch-buttons { bottom: max(112px, calc(env(safe-area-inset-bottom) + 92px)); }
+.hands.touch-hands { top: 174px; left: 18px; bottom: auto; right: auto; width: min(170px, calc(50vw - 32px)); gap: 8px; padding: 8px; pointer-events: none; }
+.hands.touch-hands img, .hands.touch-hands .model { width: 40px; height: 40px; }
+.hands.touch-hands .title { font-size: 13px; }
+.hands.touch-hands .size { font-size: 10px; }
+@media (orientation: landscape) and (max-height: 600px) { .touch-controls .touch-look { top: 75px; bottom: 105px; right: 130px; width: 32%; } .touch-controls .touch-walk { bottom: 75px; } .touch-buttons { bottom: 80px; } }
+@media (orientation: landscape) and (max-height: 600px) { .touch-controls.editor .touch-walk { bottom: 122px; } .touch-controls.editor .touch-look { bottom: 105px; } .minimap.touch-map { top: 60px; width: 80px; height: 64px; } .hands.touch-hands { top: 14px; left: 130px; width: 236px; } }
+.reduce-motion *, .reduce-motion *::before, .reduce-motion *::after { animation: none !important; transition: none !important; scroll-behavior: auto !important; }
+@media (max-width: 620px) {
+  .intro { padding: 20px; box-sizing: border-box; overflow: auto; gap: 20px; }
+  .intro .players { width: 100%; max-width: 420px; gap: 10px; flex-wrap: wrap; justify-content: center; }
+  .intro .player { width: calc(50% - 5px); height: 130px; min-width: 0; font-size: 22px; }
+  .intro .player input { width: 100%; box-sizing: border-box; }
+  .intro .player.public { width: 100%; height: 64px; }
+  .options .panel { max-height: 94dvh; max-width: 96vw; }
+  .options .body { flex-direction: column; }
+  .options .tabs { width: auto; flex-direction: row; flex-wrap: wrap; padding: 8px; border-right: 0; border-bottom: var(--ink); gap: 4px; }
+  .options .tabs .spacer { display: none; }
+  .options .content { padding: 12px; }
+  .options .head { padding: 10px 12px; gap: 10px; }
+  .options .head .logo { height: 30px; }
+  .artrow { flex-wrap: wrap; gap: 6px; }
+  .artrow .who { flex-basis: calc(100% - 54px); }
+  .artrow.edit { padding-left: 0; }
+  .artlist { max-height: none; overflow: visible; }
+  .bottom { max-width: 96vw; overflow-x: auto; }
+  .toasts { width: 92vw; }
+}

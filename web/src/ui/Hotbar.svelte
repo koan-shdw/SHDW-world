@@ -29,16 +29,16 @@
   {#if !lib.length}
     <button class="slot empty wide" onclick={onadd} title="settings › art: drop images or .glb">add art in settings</button>
   {:else}
-    {#each slots as s (s.i)}
+    {#each slots as s, visibleIndex (s.i)}
       {#if s.a}
-        <button class="slot" class:held={s.a.id === ui.art?.held} class:placed={!!ui.art?.placed[s.a.id]} title="{s.a.title} · {s.a.w} × {s.a.h} × {s.a.d} cm · {ui.art?.placed[s.a.id] ? 'on the wall · walk up to it, press e' : 'click = hold · right click = remove'}"
+        <button class="slot" class:held={s.a.id === ui.art?.held} class:placed={!!ui.art?.placed[s.a.id]} title="{s.a.title} · H {s.a.h} × W {s.a.w} × D {s.a.d} cm · {ui.art?.placed[s.a.id] ? 'on the wall · walk up to it, press e' : 'click = hold · right click = remove'}"
           onclick={(e) => openSlotRing(e, s.a!)} oncontextmenu={(e) => remove(e, s.a!.id, s.a!.title, mine(s.a!))}>
-          <span class="key">{keyOf(s.i)}</span>
+          <span class="key">{keyOf(visibleIndex)}</span>
           {#if thumb(s.a)}<img src={thumb(s.a)} alt={s.a.title} />{:else}<span class="model">…</span>{/if}
           {#if ui.art?.placed[s.a.id]}<span class="count">{s.a.kind === 'sculpture' ? 'placed' : 'on wall'}</span>{/if}
         </button>
       {:else}
-        <button class="slot empty" onclick={onadd} title="empty · add art in settings"><span class="key">{keyOf(s.i)}</span></button>
+        <button class="slot empty" onclick={onadd} title="empty · add art in settings"><span class="key">{keyOf(visibleIndex)}</span></button>
       {/if}
     {/each}
     <button class="slot note" class:held={noteHeld} style="--note: {noteColour}" onclick={() => bus.emit('note_open', {})} title="post-it · 0 · a note in your colour, stick it on a wall"><span class="key">0</span><span class="paper"></span></button>

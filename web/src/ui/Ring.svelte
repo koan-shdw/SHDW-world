@@ -21,7 +21,7 @@
   const onUpload = async () => {
     const f = upload?.files?.[0]; if (!f) return
     const url = await new Promise<string>((res, rej) => { const r = new FileReader(); r.onload = () => res(r.result as string); r.onerror = () => rej(r.error); r.readAsDataURL(f) })
-    bus.emit('set_sculpt', { patch: { texture: { name: 'custom', cm: look?.texture?.cm ?? 60, url } } })
+    bus.emit('custom_texture', { data: url, cm: look?.texture?.cm ?? 60 })
     if (upload) upload.value = ''
   }
   const look = $derived(ui.art?.focus && ui.art.focus.placed === t?.placed ? ui.art.focus.look : null)
@@ -72,7 +72,8 @@
   }
   $effect(() => bus.on('ring_confirm', () => { if (hot >= 0 && slices[hot]) act(slices[hot].id) }))
   $effect(() => bus.on('touch', ({ touch }) => { if (!touch) part = null }))
-  $effect(() => bus.on('ring_key', ({ n }) => { const s = slices[n]; if (s && s.key !== 'esc') act(s.id) }))
+  $effect(() => bus.on('ring_key', ({ n }) => { const s = slices.find((s) => s.key === (n === 9 ? '0' : String(n + 1))); if (s) act(s.id) }))
+  $effect(() => bus.on('ring_close', closeSlot))
   const name = $derived(hot >= 0 && slices[hot] ? slices[hot].label : slot ? slot.title : page === 'colour' ? (part ? part.slice(0, 12) : 'colour') : page === 'material' ? 'material' : page === 'parts' ? 'parts' : t?.title ?? '')
   const ringAt = $derived(slot ? { x: slot.x, y: slot.y, visible: true } : at)
   const isOn = (s: Slice) => (s.id.startsWith('c:') && (part ? look?.parts?.[part] : look?.colour)?.toLowerCase() === s.id.slice(2).toLowerCase()) || (s.id.startsWith('m:') && (look?.texture?.name ?? 'none') === s.id.slice(2))

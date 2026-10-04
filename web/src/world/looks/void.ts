@@ -84,7 +84,7 @@ export class Void {
   private strikeLen = 0.3
   private second = false
   readonly flashAt = new THREE.Vector3()
-  update(t: number): void {
+  update(t: number, reduce = false): void {
     if (t >= this.nextStrike && this.strikeT < 0) {
       this.strikeT = t; this.strikeLen = 0.2 + Math.random() * 0.2; this.second = Math.random() < 0.35
       this.flashAt.set(20 + Math.random() * 120, 20 + Math.random() * 50, -80 + Math.random() * 160)
@@ -97,6 +97,7 @@ export class Void {
       if (this.second && e > 0.45 && e < 0.75) f = Math.max(f, Math.pow(1 - (e - 0.45) / 0.3, 1.4) * 0.8)
       if (e >= 1) this.strikeT = -1
     }
+    if (reduce) f = 0
     this.flash = f
     for (const m of this.materials) { m.uniforms.time.value = t; m.uniforms.flash.value = f; (m.uniforms.flashAt.value as THREE.Vector3).copy(this.flashAt) }
   }

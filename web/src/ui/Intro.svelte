@@ -22,17 +22,17 @@
     <img class="logo" src="{base}brand/logo.png" alt="CULT 2026" />
     <div class="choose">choose your player</div>
     <div class="players">
-      <div class="player yozo" class:open={pick === 'YOZO'} class:shake={shake && pick === 'YOZO'} role="button" tabindex="0" onclick={() => choose('YOZO')} onkeydown={(e) => { if (e.key === 'Enter' && pick !== 'YOZO') choose('YOZO') }}>
-        <span class="name">YOZO</span>
-        {#if pick === 'YOZO'}<input bind:this={field} type="password" placeholder="the word" bind:value={word} onkeydown={(e) => { if (e.key === 'Enter') { e.stopPropagation(); go() } }} />{/if}
+      <div class="player yozo" class:open={pick === 'YOZO'} class:shake={shake && pick === 'YOZO'}>
+        <button class="choose-player" onclick={() => choose('YOZO')} aria-expanded={pick === 'YOZO'}><span class="name">YOZO</span></button>
+        {#if pick === 'YOZO'}<input aria-label="YOZO word" bind:this={field} type="password" placeholder="the word" bind:value={word} onkeydown={(e) => { if (e.key === 'Enter') { e.stopPropagation(); go() } }} />{/if}
       </div>
-      <div class="player koan" class:open={pick === 'KOAN'} class:shake={shake && pick === 'KOAN'} role="button" tabindex="0" onclick={() => choose('KOAN')} onkeydown={(e) => { if (e.key === 'Enter' && pick !== 'KOAN') choose('KOAN') }}>
-        <span class="name">KOAN</span>
-        {#if pick === 'KOAN'}<input bind:this={field} type="password" placeholder="the word" bind:value={word} onkeydown={(e) => { if (e.key === 'Enter') { e.stopPropagation(); go() } }} />{/if}
+      <div class="player koan" class:open={pick === 'KOAN'} class:shake={shake && pick === 'KOAN'}>
+        <button class="choose-player" onclick={() => choose('KOAN')} aria-expanded={pick === 'KOAN'}><span class="name">KOAN</span></button>
+        {#if pick === 'KOAN'}<input aria-label="KOAN word" bind:this={field} type="password" placeholder="the word" bind:value={word} onkeydown={(e) => { if (e.key === 'Enter') { e.stopPropagation(); go() } }} />{/if}
       </div>
-      <div class="player public" role="button" tabindex="0" onclick={pub} onkeydown={(e) => { if (e.key === 'Enter') pub() }}>
+      <button class="player public" onclick={pub}>
         <span class="name">PUBLIC</span>
-      </div>
+      </button>
     </div>
     {#if ui.doorError}<div class="wrong">{ui.doorError}</div>{/if}
   </div>

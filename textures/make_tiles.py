@@ -21,7 +21,7 @@ PATCH = {
     "render": (0.8, "grain"),
 }
 import re
-_pal = open("web/src/level.ts", encoding="utf-8").read()
+_pal = open("web/src/world/room/level.ts", encoding="utf-8").read()
 PALETTE = {m.group(1): tuple(int(m.group(2)[i:i + 2], 16) for i in (0, 2, 4)) for m in re.finditer(r"'([a-z\-]+)': \{ color: 0x([0-9a-fA-F]{6})", _pal)}
 idx = json.load(open("scan/bake/index.json"))
 os.makedirs("textures", exist_ok=True)

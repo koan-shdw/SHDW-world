@@ -6,13 +6,13 @@
   import { ui } from './state.svelte'
   import Hotbar from './Hotbar.svelte'
   import Hands from './Hands.svelte'
-  import TouchMenu from './TouchMenu.svelte'
   import Ring from './Ring.svelte'
   import WallWidget from './WallWidget.svelte'
   import Options from './Options.svelte'
   import Debug from './Debug.svelte'
   import NoteField from './NoteField.svelte'
   import Intro from './Intro.svelte'
+  import TouchControls from './TouchControls.svelte'
 
   let { base, onviewport }: { base: string; version?: string; onviewport: (el: HTMLElement) => void } = $props()
   let viewport: HTMLElement
@@ -31,14 +31,14 @@
 
 <div class="viewport" bind:this={viewport} ondragover={(e) => e.preventDefault()} ondrop={dropAnywhere} role="presentation">
   {#if ui.failed}
-    <div class="loading"><div>SHDW.world</div><div class="txt">level.json failed: {ui.failed}</div></div>
+    <div class="loading"><div>SHDW.world</div><div class="txt">could not start: {ui.failed}</div><button onclick={() => location.reload()}>retry</button></div>
   {:else if !ui.room}
     <div class="loading"><div>SHDW.world</div><div class="txt">loading the room…</div></div>
   {/if}
   {#if ui.loader.active}
     <div class="loadbar" title={ui.loader.text}><i style="width:{ui.loader.total ? Math.round(100 * ui.loader.done / ui.loader.total) : 0}%"></i><span>{ui.loader.text}</span></div>
   {/if}
-  {#if ui.hud.hint === 'enter' && ui.room && ui.chosen}
+  {#if ui.hud.hint === 'enter' && ui.room && ui.chosen && !ui.play?.touchControls}
     <div class="hint">click to enter</div>
   {/if}
   <div class="crosshair" class:target={ui.hud.target} hidden={!ui.hud.cross}></div>
@@ -46,15 +46,16 @@
   <div class="hangtip" hidden={!ui.hud.hangTip}>{ui.hud.hangTip}</div>
   {#if ui.anchors['work']?.visible && !ui.touch}<div class="worklabel" style="left:{ui.anchors['work'].x}px; top:{ui.anchors['work'].y}px">{ui.anchors['work'].text}</div>{/if}
   <Ring {base} />
-  <TouchMenu />
   {#if ui.door.open}<WallWidget />{/if}
 </div>
 
 <img class="logo top" src="{base}brand/logo.png" alt="CULT 2026" />
 <button class="settings top" onclick={() => bus.emit('menu_open', {})} hidden={ui.menuShown || !ui.chosen}>settings</button>
 <Intro {base} />
+{#if ui.play?.touchControls && ui.room && ui.chosen}<TouchControls />{/if}
 
 {#if ui.door.open}
+  <div class="save-status" role="status" title={ui.save.error ?? undefined}>{ui.save.state === 'error' ? 'not saved' : ui.save.state}{ui.save.pending ? ` · ${ui.save.pending} pending` : ''}{#if ui.save.error}<span>{ui.save.error}</span>{/if}{#if ui.save.pending && ['error', 'offline'].includes(ui.save.state)}<button onclick={() => bus.emit('save_retry', {})}>retry saves</button>{/if}</div>
   <div class="bottom" class:dim={!ui.hud.cross}>
     <Hotbar {base} onadd={() => bus.emit('menu_open', { tab: 'art' })} />
   </div>
@@ -63,7 +64,7 @@
 {/if}
 
 <svelte:document onmousedown={outside} />
-<canvas class="minimap" bind:this={small}></canvas>
+<canvas class="minimap" class:touch-map={ui.play?.touchControls} bind:this={small}></canvas>
 <canvas class="bigmap" bind:this={big} hidden={!ui.mapShown} onclick={mapClick}></canvas>
 
 <div class="toasts">

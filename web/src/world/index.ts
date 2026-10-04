@@ -28,17 +28,21 @@ const LOOK_KEY = 'koan-hang-look'
 export interface WorldHandle { renderer: Renderer; level: Level; art: ArtSystem; walker: Walker; dispose: () => void }
 
 export async function startWorld(container: HTMLElement, base: string): Promise<WorldHandle | null> {
+  const startupCleanup: (() => void)[] = []
+  try {
   const DATA = `${base}data/`
   const renderer = new Renderer(container)
+  startupCleanup.push(() => renderer.dispose())
   const { scene, camera } = renderer
   const loader = new Loader(base, renderer.gl)
+  startupCleanup.push(() => loader.dispose())
   scene.background = new THREE.Color(0xbfd9f2)
   scene.add(new THREE.HemisphereLight(0xffffff, 0x8a8078, 0.55))
   const sun = new THREE.DirectionalLight(0xfff4e0, 1.2); sun.position.set(6, 10, -4); scene.add(sun)
 
   // ---- room ---------------------------------------------------------------------------------------
   let level: Level
-  try { level = await loadLevel(`${DATA}level/level.json`) } catch (e) { bus.emit('world_failed', { message: (e as Error).message }); return null }
+  try { level = await loadLevel(`${DATA}level/level.json`) } catch (e) { bus.emit('world_failed', { message: (e as Error).message }); loader.dispose(); renderer.dispose(); return null }
   const built = buildLevel(level)
   worldUVs(built.group)
   scene.add(built.group, built.wire)
@@ -65,6 +69,7 @@ export async function startWorld(container: HTMLElement, base: string): Promise<
   applyLook()
 
   const looks = new Looks(renderer, built.group, new THREE.Color(level.fog?.color ?? level.sky?.fallback ?? 0x232325), DATA)
+  startupCleanup.push(() => looks.dispose())
   const intro = new Intro(level, loader, base); scene.add(intro.group)
   renderer.gl.shadowMap.enabled = true; renderer.gl.shadowMap.type = THREE.PCFSoftShadowMap   // one shadow: the plate on the red wall
   built.group.traverse((o) => { const m = o as THREE.Mesh; if (m.isMesh) m.receiveShadow = true })
@@ -98,17 +103,20 @@ export async function startWorld(container: HTMLElement, base: string): Promise<
   walker.doors = built.doors
   walker.teleport('ground', 6.18, 4.3); walker.state.yaw = THREE.MathUtils.degToRad(42.5); walker.applyCamera(1)   // owner 09-06: start on the far square of the yard, facing the door
   const input = new Input(renderer.gl.domElement)
+  startupCleanup.push(() => input.dispose())
   const feel = new Feel(); feel.reduce = input.settings.reduceMotion
   walker.keys = input.keys
-  walker.headBob = input.settings.headBob
+  walker.headBob = input.settings.headBob && !input.settings.reduceMotion
   camera.fov = input.settings.fov; camera.updateProjectionMatrix()
   input.onLook = (dx, dy) => walker.look(dx, dy)
   input.onLockChange = (on) => walker.setLocked(on)
   walker.onLevelStep = () => feel.dip(walker.dip, 0.03)
   const art = new ArtSystem(level, scene, walker, camera, DATA, loader)
+  startupCleanup.push(() => art.dispose())
   const store = new Store()                          // SHOW.md §4: the show's truth
+  startupCleanup.push(() => store.dispose())
   ensureNoteFont()
-  const ours = (): boolean => store.open           // the door is open in this browser: the bar, the hands, the rings; else look only
+  const ours = (): boolean => store.open && art.store !== null
   art.feel = feel
   art.occluder = occluder
   art.floorRay = (origin, dir, far) => { bvhRay.origin.copy(origin); bvhRay.direction.copy(dir); const h = roomBVH.raycastFirst(bvhRay, THREE.DoubleSide, 0, far); return h && h.face ? { point: h.point, ny: Math.abs(h.face.normal.y), dist: h.distance } : null }
@@ -143,7 +151,7 @@ export async function startWorld(container: HTMLElement, base: string): Promise<
   art.onChange = artSnapshot
   await art.load()
   // the share link (?layout=) is a read-only view: no store, no writes; otherwise the store's show replaces this browser's
-  if (new URLSearchParams(location.search).get('layout')) art.store = null
+  if (new URLSearchParams(location.search).get('layout')) { art.store = null; const show = await store.load(); if (show) art.setArt(show.art) }
   else { art.store = store; const show = await store.load(); if (show) art.setShow(show.items, show.art) }
   artSnapshot()
   walker.onChange = () => art.onLevelChange()
@@ -155,22 +163,27 @@ export async function startWorld(container: HTMLElement, base: string): Promise<
     fetch(`${DATA}layouts/${wanted.replace(/[^a-z0-9_-]+/gi, '-')}.json`).then((r) => (r.ok ? r.text() : Promise.reject(new Error(`${r.status}`))))
       .then((text) => art.importFile(text)).then(() => bus.toast(`layout ${wanted} loaded from the repo`, 'warn')).catch(() => bus.toast(`no layout called ${wanted} in the repo`, 'bad'))
   }
-  bus.emit('world_ready', { hangWalls: level.walls.filter((w) => w.hang !== false).length, stairs: level.stairs.length, doors: built.doors.length, floors: level.levels.length, eyeCm: Math.round(level.eyeHeight * 100), walls: level.walls.length })
 
   // ---- minimap: the UI hands over two canvases -------------------------------------------------------
   let minimap: Minimap | null = null
   let bigShown = false
-  const showMap = (show: boolean) => { bigShown = show; bus.emit('map_show', { show }); if (show) walker.release() }
+  const showMap = (show: boolean) => { bigShown = show; bus.emit('map_show', { show }); if (show) input.release() }
 
   // ---- bus: ui → world ---------------------------------------------------------------------------------
   const offs: (() => void)[] = []
+  startupCleanup.push(() => offs.forEach(off => off()))
   offs.push(
     bus.on('set_look', ({ look: l }) => { look = l; applyLook() }),
     bus.on('set_eye', ({ cm }) => { if (cm >= 100 && cm <= 220) { level.eyeHeight = cm / 100; bus.toast(`eye height ${cm} cm`) } }),
     bus.on('accent', ({ css }) => setWireColor(built.wire, css)),
     bus.on('world_ready', () => setWireColor(built.wire, getComputedStyle(document.documentElement).getPropertyValue('--accent').trim() || '#66BDE6')),
     bus.on('door_check', async ({ key, who }) => { const r = await store.check(key, who); bus.emit('door_result', r); if (r.ok && art.store) { const show = await store.load(); if (show) art.setShow(show.items, show.art); artSnapshot() } }),
-    bus.on('door_leave', () => { store.leave(); art.hold(null); closeTouch(); artSnapshot() }),
+    bus.on('door_leave', () => { store.leave(); art.hold(null); art.layout.items = art.layout.items.filter((p) => !p.note); art.rebuild(); closeTouch(); artSnapshot() }),
+    bus.on('save_retry', () => { if (ours()) void store.retry() }),
+    bus.on('touch_session', ({ active }) => input.setTouchActive(active && !menuOpen && !bigShown && !noteOpen && !input.ringOpen)),
+    bus.on('touch_move', ({ x, y }) => input.touchMove(x, y)),
+    bus.on('touch_look', ({ dx, dy }) => input.touchLook(dx, dy)),
+    bus.on('touch_verb', ({ verb }) => { if (input.settings.touchControls) input.onVerb?.(verb, new MouseEvent('mousedown')) }),
     bus.on('hold', ({ id }) => {
       if (!ours()) return
       const a = id ? art.library.find((x) => x.id === id) ?? null : null
@@ -183,9 +196,9 @@ export async function startWorld(container: HTMLElement, base: string): Promise<
       input.setPlay(patch)
       if (patch.fov !== undefined) feel.fov(camera, patch.fov)
       if (patch.reduceMotion !== undefined) feel.reduce = patch.reduceMotion
-      if (patch.headBob !== undefined) walker.headBob = patch.headBob
+      walker.headBob = input.settings.headBob && !input.settings.reduceMotion
     }),
-    bus.on('add_local', ({ item }) => {
+    bus.on('add_local', ({ item }) => { if (!ours()) return;
       // SHOW.md §5: behind the door a drop goes up to the store for everyone; if the store will not take it, it stays in this browser
       const go = store.open && art.store ? art.addStore(item).catch((e) => { bus.toast(`not in the store · ${(e as Error).message} · kept in this browser only`, 'warn'); return art.addLocal(item) }) : art.addLocal(item)
       void go.then((a) => bus.toast(`${a.title} · ${a.w} × ${a.h} × ${a.d} cm in the library`))
@@ -194,24 +207,25 @@ export async function startWorld(container: HTMLElement, base: string): Promise<
     bus.on('note_open', () => openNote()),
     bus.on('note_text', ({ text }) => closeNote(text)),
     bus.on('note_cancel', () => closeNote(null)),
-    bus.on('update_art', ({ id, patch }) => { void art.updateArt(id, patch).then((a) => bus.toast(`${a.title} · ${a.w} × ${a.h} × ${a.d} cm`)).catch((e) => bus.toast(`not changed · ${(e as Error).message}`, 'bad')) }),
-    bus.on('push_local', ({ id }) => { void art.pushLocal(id).then((a) => bus.toast(`${a.title} is in the store`)).catch((e) => bus.toast(`not in the store · ${(e as Error).message}`, 'bad')) }),
-    bus.on('remove_local', ({ id }) => { void art.removeLocal(id).catch((e) => bus.toast(`not removed · ${(e as Error).message}`, 'bad')) }),
-    bus.on('set_guides', ({ patch }) => art.setGuides(patch)),
-    bus.on('set_sculpt', ({ patch }) => { if (!art.setLook(patch)) bus.toast('hold or look at a sculpture first', 'warn') }),
-    bus.on('rotate', ({ deg }) => { if (!art.rotate(deg)) bus.toast('hold or look at a sculpture first', 'warn'); else artSnapshot() }),
+    bus.on('update_art', ({ id, patch }) => { if (!ours()) return; void art.updateArt(id, patch).then(() => bus.emit('art_updated', { id })).catch((e) => bus.toast(`not changed · ${(e as Error).message}`, 'bad')) }),
+    bus.on('push_local', ({ id }) => { if (!ours()) return; void art.pushLocal(id).then((a) => bus.toast(`${a.title} is in the store`)).catch((e) => bus.toast(`not in the store · ${(e as Error).message}`, 'bad')) }),
+    bus.on('remove_local', ({ id }) => { if (!ours()) return; void art.removeLocal(id).catch((e) => bus.toast(`not removed · ${(e as Error).message}`, 'bad')) }),
+    bus.on('set_guides', ({ patch }) => { if (ours()) art.setGuides(patch) }),
+    bus.on('set_sculpt', ({ patch }) => { if (!ours()) return; if (!art.setLook(patch)) bus.toast('hold or look at a sculpture first', 'warn') }),
+    bus.on('custom_texture', ({ data, cm }) => { if (ours()) void art.setCustomTexture(data, cm).catch((e) => bus.toast((e as Error).message, 'bad')) }),
+    bus.on('rotate', ({ deg }) => { if (!ours()) return; if (!art.rotate(deg)) bus.toast('hold or look at a sculpture first', 'warn'); else artSnapshot() }),
     bus.on('probe_model', ({ data, key }) => {
       loader.model(data, 'art').then((g) => { const b = new THREE.Box3().setFromObject(g); const s = new THREE.Vector3(); b.getSize(s); bus.emit('model_probed', { key, w: Math.round(s.x * 100), h: Math.round(s.y * 100), d: Math.round(s.z * 100) }) })
         .catch((e) => bus.emit('model_probed', { key, w: 0, h: 0, d: 0, error: (e as Error).message }))
     }),
-    bus.on('snap_all', ({ wall }) => {
+    bus.on('snap_all', ({ wall }) => { if (!ours()) return;
       if (wall === 'looked') { const h = art.hitWall(); if (!h) { bus.toast('look at a wall first', 'warn'); return } bus.toast(`${art.snapAll(h.wall.id)} snapped`) }
       else bus.toast(`${art.snapAll()} snapped`)
     }),
-    bus.on('set_name', ({ name }) => { art.layout.name = name || 'draft'; art.autosave(); artSnapshot() }),
+    bus.on('set_name', ({ name }) => { if (!ours()) return; art.layout.name = name || 'draft'; art.autosave(); artSnapshot() }),
     bus.on('export_file', () => { const f = art.exportFile(); bus.emit('file_ready', f) }),
-    bus.on('import_file', ({ text, name }) => { void art.importFile(text).then((r) => bus.toast(`loaded ${name} · ${r.works} works · ${r.art} new images${art.lastImportDropped ? ` · ${art.lastImportDropped} duplicate(s) dropped, one of each` : ''}`)).catch((e) => bus.toast((e as Error).message, 'bad')) }),
-    bus.on('clear_draft', () => art.clearDraft()),
+    bus.on('import_file', ({ text, name }) => { if (!ours()) return; void art.importFile(text).then((r) => bus.toast(`loaded ${name} · ${r.works} works · ${r.art} new images${art.lastImportDropped ? ` · ${art.lastImportDropped} duplicate(s) dropped, one of each` : ''}`)).catch((e) => bus.toast((e as Error).message, 'bad')) }),
+    bus.on('clear_draft', () => { if (ours()) art.clearDraft() }),
     bus.on('mount_maps', ({ small, big }) => { minimap = new Minimap(level, small, big) }),
     bus.on('map_click', ({ px, py }) => {
       const hit = minimap?.hit(px, py, walker.state)
@@ -234,7 +248,7 @@ export async function startWorld(container: HTMLElement, base: string): Promise<
   const openTouch = (p: Placed, ring: 'actions' | 'look' = 'actions') => { ringKind = ring; touch = p; walker.frozen = true; art.selected = p.id; artSnapshot(); bus.emit('touch', { touch: touchSnap(p) }); const sz = renderer.size; input.openRing(sz.x / 2, sz.y / 2) }
   const closeTouch = () => { if (!touch) return; touch = null; walker.frozen = false; art.selected = null; anchors.set('touch', null); artSnapshot(); input.closeRing(); bus.emit('touch', { touch: null }) }
   const touchAction = (action: TouchAction) => {
-    const p = touch; if (!p) return
+    const p = touch; if (!p || !ours()) return
     switch (action) {
       case 'move': closeTouch(); input.clearClick(); art.selected = p.id; if (art.pickup()) bus.toast(`${art.held?.title} in your hands · click puts it back · right click puts it down`); break
       case 'down': closeTouch(); art.selected = p.id; if (art.remove()) bus.toast(`${nameOf(p.art)} taken down · back in the bar · ctrl z brings it back`); break
@@ -253,11 +267,11 @@ export async function startWorld(container: HTMLElement, base: string): Promise<
   }
   input.onVerb = (verb: Verb, e) => {
     if (noteOpen) { if (verb === 'back') closeNote(null); return }
-    if (verb === 'back') { if (menuOpen) closeMenu(); else if (bigShown) showMap(false); else if (touch) closeTouch(); return }
+    if (verb === 'back') { if (menuOpen) closeMenu(); else if (bigShown) showMap(false); else if (touch) closeTouch(); else if (input.ringOpen) { input.closeRing(); bus.emit('ring_close', {}) } return }
     if (menuOpen) { if (verb === 'menu') closeMenu(); return }
     if (bigShown) { if (verb === 'menu' || verb === 'map') showMap(false); return }
     // the public door (SHOW.md §2): walk, look, the room's doors, the map, settings. Nothing moves.
-    if (!ours()) { if (verb === 'touch') { if (!toggleDoor()) bus.toast('nothing to touch here', 'warn') } else if (verb === 'menu') openMenu(); else if (verb === 'map') showMap(true); else if (verb === 'debug') bus.emit('debug_toggle', {}); return }
+    if (!ours()) { if (verb === 'touch') { if (!toggleDoor()) bus.toast('nothing to touch here', 'warn') } else if (verb === 'menu' || verb === 'keys') openMenu(verb === 'keys' ? 'keys' : undefined); else if (verb === 'map') showMap(true); else if (verb === 'debug') bus.emit('debug_toggle', {}); return }
     switch (verb) {
       case 'menu': openMenu(); break
       case 'keys': openMenu('keys'); break
@@ -296,13 +310,15 @@ export async function startWorld(container: HTMLElement, base: string): Promise<
   const closeNote = (text: string | null) => { if (!noteOpen) return; noteOpen = false; bus.emit('note_field', { show: false }); if (text) { art.holdNote(text); artSnapshot() } void input.lock() }
   input.onSlot = (n) => {
     if (menuOpen || !ours()) return
-    if (touch) { bus.emit('ring_key', { n }); return }
+    if (input.ringOpen) { bus.emit('ring_key', { n }); return }
     if (n === 9) { openNote(); return }
-    const a = art.library[n]; if (!a) { return }
+    const held = art.library.findIndex((a) => a.id === art.held?.id)
+    const start = art.library.length <= 9 ? 0 : Math.max(0, Math.min(art.library.length - 9, held - 4))
+    const a = art.library[start + n]; if (!a) { return }
     bus.emit('hold', { id: a.id })
   }
   input.onArrow = (du, dy, e) => {
-    if (menuOpen) return
+    if (menuOpen || !ours() || bigShown || noteOpen) return
     if (touch) art.selected = touch.id
     else if (art.held?.kind === 'painting') { e.preventDefault(); if (dy) guideHeight(dy); else if (du) guideSnap(du > 0 ? 1 : -1); return }
     if (art.nudge(du, dy)) e.preventDefault()
@@ -313,17 +329,17 @@ export async function startWorld(container: HTMLElement, base: string): Promise<
   const guideSnap = (step: number): void => { const g = art.layout.guides; const i = SNAPS.indexOf(g.snap); art.setGuides({ snap: SNAPS[((i + step) % 4 + 4) % 4] }); bus.emit('widget_flash', { key: 'snap' }) }
   const guideGap = (): void => { const g = art.layout.guides; const steps = [0, 5, 10, 20]; const i = steps.indexOf(g.gap); art.setGuides({ gap: steps[(i + 1) % steps.length] }); bus.emit('widget_flash', { key: 'gap' }); bus.toast(`gap ${art.layout.guides.gap} cm`) }
   input.onWheel = (step, big) => {
-    if (menuOpen) return
+    if (menuOpen || !ours() || bigShown || noteOpen) return
     if (touch) { touchAction(step > 0 ? 'swap' : 'swapback'); return }
     if (art.held?.kind === 'painting') { guideHeight((step > 0 ? -1 : 1) * (big ? 10 : 1)); return }
     art.swap(step)
   }
   // losing the lock (esc) frees the mouse and nothing more: click puts you back; the menu is the settings button top right (owner 09-07)
-  bus.on('menu_close', () => closeMenu())
-  bus.on('menu_open', ({ tab }) => openMenu(tab))
-  bus.on('ui_ring', ({ open, x, y }) => { if (open) input.openRing(x, y); else input.closeRing() })
+  offs.push(bus.on('menu_close', () => closeMenu()))
+  offs.push(bus.on('menu_open', ({ tab }) => openMenu(tab)))
+  offs.push(bus.on('ui_ring', ({ open, x, y }) => { if (open && ours()) input.openRing(x, y); else input.closeRing() }))
   // token save (ART.md §4, the owner's path): layouts/<name>.json into the repo through the GitHub contents API
-  bus.on('repo_save', ({ name, token }) => {
+  offs.push(bus.on('repo_save', ({ name, token }) => { if (!ours()) return;
     const f = art.exportFile(); const path = `layouts/${(name || art.layout.name || 'layout').replace(/[^a-z0-9_-]+/gi, '-').toLowerCase()}.json`
     const api = `https://api.github.com/repos/koan-shdw/SHDW-world/contents/${path}`
     const headers = { Authorization: `Bearer ${token}`, Accept: 'application/vnd.github+json', 'Content-Type': 'application/json' }
@@ -331,8 +347,8 @@ export async function startWorld(container: HTMLElement, base: string): Promise<
     fetch(api, { headers }).then((r) => (r.ok ? r.json() : null)).then((cur) => fetch(api, { method: 'PUT', headers, body: body(cur?.sha) }))
       .then(async (r) => { if (!r.ok) throw new Error(`${r.status} ${(await r.text()).slice(0, 120)}`); bus.emit('repo_saved', { ok: true, url: `${location.origin}${location.pathname}?layout=${path.slice(8, -5)}` }); bus.toast(`saved to the repo · ${path}`, 'warn') })
       .catch((e) => { bus.emit('repo_saved', { ok: false, error: (e as Error).message }); bus.toast(`repo save failed · ${(e as Error).message}`, 'bad') })
-  })
-  bus.on('touch_action', ({ action }) => touchAction(action))
+  }))
+  offs.push(bus.on('touch_action', ({ action }) => touchAction(action)))
 
   // ---- loop --------------------------------------------------------------------------------------------------
   let lastWalk = '', lastHud = '', lastFocus = ''
@@ -340,9 +356,9 @@ export async function startWorld(container: HTMLElement, base: string): Promise<
   const tv = new THREE.Vector3()
   const STEP = 1 / 120; let acc = 0
   // SHOW.md §4: every 10 s, send what waits and bring in what the other person did
-  const tick = window.setInterval(async () => { const d = await store.tick(); if (d && art.store && art.applyShow(d.items, d.deleted, d.art, d.artDeleted)) artSnapshot() }, TICK_MS)
+  const tick = window.setInterval(async () => { if (!art.store) return; const d = await store.tick(); if (d && art.applyShow(d.items, d.deleted, d.art, d.artDeleted)) artSnapshot() }, TICK_MS)
   renderer.start((dt) => {
-    elapsed += dt; looks.update(elapsed)
+    elapsed += dt; looks.update(elapsed, input.settings.reduceMotion)
     // fixed step (GAME.md §1): the walker moves in 1/120 s steps, the camera blends between the last two
     input.pollPad(dt)
     acc += Math.min(dt, 0.1); let steps = 0
@@ -360,7 +376,7 @@ export async function startWorld(container: HTMLElement, base: string): Promise<
       const p = art.layout.items.find((x) => x.id === touch!.id)
       if (!p) closeTouch()
       else {
-        const a = art.library.find((x) => x.id === p.art)
+        const a = art.artOf(p.art)
         const c = p.kind === 'sculpture' && p.pos ? tv.set(p.pos[0], p.pos[1] + (a ? a.h / 200 + (p.plinth?.h ?? 0) / 100 : 1), p.pos[2]) : (() => { const w = level.walls.find((x) => x.id === p.wall); if (!w || !a) return tv.set(0, 0, 0); const dx = w.b[0] - w.a[0], dz = w.b[1] - w.a[1]; const L = Math.hypot(dx, dz) || 1; const uc = p.u + a.w / 200; return tv.set(w.a[0] + dx / L * uc, floorOf(level, p.level).floorY + p.topY - a.h / 200, w.a[1] + dz / L * uc) })()
         if (c.distanceTo(camera.position) > 2.3) closeTouch(); else anchors.set('touch', c)
       }
@@ -388,7 +404,7 @@ export async function startWorld(container: HTMLElement, base: string): Promise<
     const walkKey = `${s.level}|${s.x.toFixed(2)}|${s.z.toFixed(2)}|${s.onStair}|${locked}`
     if (walkKey !== lastWalk) { lastWalk = walkKey; bus.emit('walk_state', { level: s.level, levelName: floorOf(level, s.level).name, x: s.x, z: s.z, onStair: !!s.onStair, locked }) }
     minimap?.draw(s)
-    intro.update(elapsed, looks.void.flash, looks.void.flashAt)
+    intro.update(input.settings.reduceMotion ? 0 : elapsed, input.settings.reduceMotion ? 0 : looks.void.flash, looks.void.flashAt)
     // anchors: the wall widget rides the ghost; a touchable work carries its prompt
     anchors.set('hang-widget', locked && art.held?.kind === 'painting' && art.preview.hit ? art.preview.hit.point : null)
     if (lookAt && !touch) { const a = art.artOf(lookAt.art); const pf = floorOf(level, lookAt.level).floorY; const w = level.walls.find((x) => x.id === lookAt.wall); if (a && w && lookAt.kind === 'painting') { const [dx, dz] = [w.b[0] - w.a[0], w.b[1] - w.a[1]]; const L = Math.hypot(dx, dz) || 1; const uc = lookAt.u + a.w / 200; anchors.set('work', new THREE.Vector3(w.a[0] + dx / L * uc, pf + lookAt.topY + 0.08, w.a[1] + dz / L * uc), ours() ? (lookAt.note ? `${lookAt.note.who} · touch` : 'touch') : a.title) } else if (a && lookAt.pos) anchors.set('work', new THREE.Vector3(lookAt.pos[0], lookAt.pos[1] + a.h / 100 + (lookAt.plinth?.h ?? 0) / 100 + 0.1, lookAt.pos[2]), ours() ? 'touch' : a.title) }
@@ -428,7 +444,12 @@ export async function startWorld(container: HTMLElement, base: string): Promise<
     for (const off of offs) off()
     clearInterval(tick)
     input.onVerb = null; input.onLook = null; input.onSlot = null; input.onArrow = null; input.onWheel = null
-    renderer.active = false; loader.dispose(); renderer.gl.dispose()
+    store.dispose(); input.dispose(); art.dispose(); looks.dispose(); roomGeo.dispose(); loader.dispose(); renderer.dispose()
   }
+  bus.emit('world_ready', { hangWalls: level.walls.filter((w) => w.hang !== false).length, stairs: level.stairs.length, doors: built.doors.length, floors: level.levels.length, eyeCm: Math.round(level.eyeHeight * 100), walls: level.walls.length })
   return { renderer, level, art, walker, dispose }
+  } catch (error) {
+    for (const cleanup of startupCleanup.reverse()) { try { cleanup() } catch { /* finish releasing other resources */ } }
+    throw error
+  }
 }

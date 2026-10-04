@@ -1,9 +1,10 @@
 // P4 gate 1: the library, hold-walk-look-click hanging, the HANG widget, layouts (docs/ART.md §1-4, §6).
 import * as THREE from 'three'
+import { bus } from '../../bus'
 import { strip, artUrl, type Store, type ShowItem, type ArtMeta } from '../store'
 import { prepPainting, prepModel } from './upload'
 import { NOTE_ID, NOTE_ITEM, drawNote } from './note'
-import { type Level, type Wall, wallLength, wallDir, wallPoint, floorOf } from '../room/level'
+import { type Level, type Wall, wallLength, wallDir, wallPoint, floorOf, pointInPoly } from '../room/level'
 import type { Walker } from '../walk'
 import type { Loader } from '../loader'
 import type { Feel } from '../feel'
@@ -24,6 +25,7 @@ export const TEXTURE_CHIPS: { name: string; tile: string | null }[] = [
 export const defaultPlinth = (): Plinth => ({ w: 40, d: 40, h: 100, colour: '#f4f4f0' })
 export interface Guides { snap: SnapLine; top: number; centre: number; bottom: number; gap: number; show: boolean }
 export interface Layout { format: 'koan-hang-layout/2'; name: string; guides: Guides; items: Placed[]; art?: ArtItem[] }
+interface Edit { items: { id: string; before?: Placed; after?: Placed }[]; guides?: { before: Guides; after: Guides } }
 
 const DRAFT_KEY = 'koan-hang-draft'
 const DB_NAME = 'koan-hang', STORE = 'art'
@@ -85,8 +87,11 @@ export class ArtSystem {
   private handMesh: THREE.Group | null = null
   private guideLines = new THREE.Group()
   private meshes = new Map<string, THREE.Group>()
+  private meshKeys = new Map<string, string>()
+  private disposed = false
   private textures = new Map<string, THREE.Texture>()
-  private undo: string[] = []; private redo: string[] = []
+  private undo: Edit[] = []; private redo: Edit[] = []
+  private editing: { items: Placed[]; guides: Guides } | null = null
   private base: string
   private local: ArtItem[] = []
   private seq = 0
@@ -125,8 +130,11 @@ export class ArtSystem {
     for (const m of art) {
       if ((this.artSeen.get(m.id) ?? -1) >= (m.ts ?? 0)) continue
       const a = this.fromStore(m); const i = this.storeArt.findIndex((x) => x.id === a.id)
+      const previous = this.storeArt[i]
+      if (previous?.data !== a.data) { this.textures.get(a.id)?.dispose(); this.textures.delete(a.id) }
+      if (previous?.model !== a.model) { const model = this.models.get(a.id); if (model) this.release(model); this.models.delete(a.id) }
       if (i >= 0) this.storeArt[i] = a; else this.storeArt.push(a)
-      this.artSeen.set(a.id, m.ts ?? 0); this.textures.delete(a.id); this.models.delete(a.id); changed = true
+      this.artSeen.set(a.id, m.ts ?? 0); changed = true
     }
     for (const id of deleted) {
       if (!this.artSeen.has(id)) continue
@@ -146,8 +154,8 @@ export class ArtSystem {
     const meta: ArtMeta = { ...(rest as Omit<ArtItem, 'id'>), id, kind, edge: item.edge ?? 'wrap' }
     if (kind === 'sculpture') { meta.colour = meta.colour ?? '#f2f2ee'; meta.texture = meta.texture ?? null; meta.plinth = meta.plinth === undefined ? defaultPlinth() : meta.plinth }
     const full = await this.store.uploadArt(id, meta, prepped)
-    const a = this.fromStore({ ...full, ts: Date.now() })
-    this.storeArt.push(a); this.artSeen.set(a.id, Date.now()); this.relib()
+    const a = this.fromStore(full)
+    this.storeArt.push(a); this.artSeen.set(a.id, full.ts ?? 0); this.relib()
     this.onChange?.()
     return a
   }
@@ -160,8 +168,8 @@ export class ArtSystem {
     const prepped = a.kind === 'sculpture' ? await prepModel(src) : await prepPainting(src)
     const { data, model, thumb, store, ...rest } = a; void data; void model; void thumb; void store
     const full = await this.store.uploadArt(a.id, { ...(rest as Omit<ArtItem, 'store'>), id: a.id }, prepped)
-    const s = this.fromStore({ ...full, ts: Date.now() }); if (a.kind === 'sculpture' && a.thumb) s.thumb = a.thumb
-    this.storeArt.push(s); this.artSeen.set(s.id, Date.now())
+    const s = this.fromStore(full); if (a.kind === 'sculpture' && a.thumb) s.thumb = a.thumb
+    this.storeArt.push(s); this.artSeen.set(s.id, full.ts ?? 0)
     this.local = this.local.filter((x) => x.id !== id); await idbSet('items', this.local)
     this.relib(); this.rebuild(); this.onChange?.()
     return s
@@ -193,9 +201,10 @@ export class ArtSystem {
   async updateArt(id: string, patch: { title?: string; h?: number; w?: number; d?: number }): Promise<ArtItem> {
     const a = this.library.find((x) => x.id === id); if (!a) throw new Error('not in the library')
     const clean: Partial<ArtItem> = {}
-    if (patch.title !== undefined && patch.title.trim()) clean.title = patch.title.trim()
-    for (const k of ['h', 'w', 'd'] as const) { const v = patch[k]; if (v !== undefined && Number.isFinite(v) && v >= 0 && (k === 'd' || v > 0)) clean[k] = v }
-    if (a.store) { if (!this.store?.open) throw new Error('the door'); await this.store.updateArt(id, { ...this.toMeta(a), ...clean }); Object.assign(a, clean); this.artSeen.set(id, Date.now()) }
+    if (patch.title !== undefined) { if (!patch.title.trim()) throw new Error('title is required'); clean.title = patch.title.trim() }
+    for (const k of ['h', 'w', 'd'] as const) { const v = patch[k]; if (v === undefined) continue; if (!Number.isFinite(v) || v < 0 || (k !== 'd' && v <= 0)) throw new Error('height and width must be positive; depth cannot be negative'); clean[k] = v }
+    if (['w', 'h', 'd'].some((k) => clean[k as 'w' | 'h' | 'd'] !== undefined && clean[k as 'w' | 'h' | 'd'] !== a[k as 'w' | 'h' | 'd'])) for (const p of this.layout.items.filter((p) => p.art === id)) { const why = this.placementWhy(p, { ...a, ...clean }); if (why) throw new Error(why) }
+    if (a.store) { if (!this.store?.open) throw new Error('the door'); const ts = await this.store.updateArt(id, { ...this.toMeta(a), ...clean }); Object.assign(a, clean); this.artSeen.set(id, ts) }
     else if (this.local.some((x) => x.id === id)) { Object.assign(a, clean); await idbSet('items', this.local) }
     else throw new Error('built in, it stays')
     this.rebuild(); this.autosave(); this.onChange?.()
@@ -225,7 +234,7 @@ export class ArtSystem {
     if (!this.modelPending.has(a.id)) {
       this.modelPending.add(a.id)
       const src = a.model && /^(data:|blob:|https?:)/.test(a.model) ? a.model : `${this.base}art/${a.model}`
-      this.loader.model(src, 'art').then((scene) => { this.models.set(a.id, scene); this.modelPending.delete(a.id); this.onModel?.(a, scene); this.rebuild(); if (this.held?.id === a.id) this.hold(a) })
+      this.loader.model(src, 'art').then((scene) => { if (this.disposed) { this.release(scene); return }; this.models.set(a.id, scene); this.modelPending.delete(a.id); this.onModel?.(a, scene); this.rebuild(); if (this.held?.id === a.id) this.hold(a) })
         .catch((e) => { console.warn(`model failed: ${a.title}`, e); this.modelPending.delete(a.id) })
     }
     return null
@@ -236,7 +245,8 @@ export class ArtSystem {
       // his own image: decoded once, tiled by cm
       let t = this.customTiles.get(url)
       if (!t) { t = new THREE.Texture(); t.colorSpace = THREE.SRGBColorSpace; this.customTiles.set(url, t); this.loader.image(url, 'art', { repeat: true, anisotropy: 8 }).then((tex) => { this.customTiles.set(url, tex); this.rebuild() }).catch(() => undefined) }
-      const c = t.clone(); c.wrapS = c.wrapT = THREE.RepeatWrapping; c.repeat.setScalar(100 / Math.max(5, cm)); c.needsUpdate = true
+      if (!t.image) return null
+      const c = t.clone(); c.userData.owned = true; c.wrapS = c.wrapT = THREE.RepeatWrapping; c.repeat.setScalar(100 / Math.max(5, cm)); c.needsUpdate = true
       return c
     }
     const chip = TEXTURE_CHIPS.find((c) => c.name === name); if (!chip?.tile || !this.tileLoader) return null
@@ -246,7 +256,8 @@ export class ArtSystem {
       const key = chip.tile
       this.tileLoader(key).then((tex) => { this.tiles.set(key, tex); this.rebuild() }).catch(() => undefined)
     }
-    const c = t.clone(); c.wrapS = c.wrapT = THREE.RepeatWrapping; c.repeat.setScalar(100 / Math.max(5, cm)); c.needsUpdate = true
+    if (!t.image) return null
+    const c = t.clone(); c.userData.owned = true; c.wrapS = c.wrapT = THREE.RepeatWrapping; c.repeat.setScalar(100 / Math.max(5, cm)); c.needsUpdate = true
     return c
   }
   /** a sculpture: the model tinted and tiled, standing on its plinth (or the floor). Local origin = the plinth's floor centre */
@@ -271,12 +282,13 @@ export class ArtSystem {
       const box = new THREE.Box3().setFromObject(m); const size = new THREE.Vector3(); box.getSize(size)
       const k = size.y > 0 ? (a.h / 100) / size.y : 1     // typed height rules, aspect kept
       m.scale.setScalar(k); m.position.set(-(box.min.x + box.max.x) / 2 * k, ph - box.min.y * k, -(box.min.z + box.max.z) / 2 * k)
-      m.traverse((o) => { const mm = o as THREE.Mesh; if (mm.isMesh) { mm.material = partMat(mm.name || mm.parent?.name || ''); mm.castShadow = true } })
+      m.traverse((o) => { const mm = o as THREE.Mesh; if (mm.isMesh) { mm.userData.borrowedGeometry = true; mm.material = partMat(mm.name || mm.parent?.name || ''); mm.castShadow = true } })
       g.add(m)
     } else {
       const ph2 = new THREE.Mesh(new THREE.BoxGeometry(a.w / 100, a.h / 100, a.d / 100), mat); ph2.position.y = ph + a.h / 200; g.add(ph2)
     }
-    if (ghost) g.traverse((o) => { const m = o as THREE.Mesh; if (m.isMesh) { const mm = (m.material as THREE.MeshStandardMaterial).clone(); mm.transparent = true; mm.opacity = 0.6; mm.depthWrite = false; m.material = mm } })
+    if (ghost) g.traverse((o) => { const m = o as THREE.Mesh; if (m.isMesh) { const mm = m.material as THREE.MeshStandardMaterial; mm.transparent = true; mm.opacity = 0.6; mm.depthWrite = false } })
+    g.userData.extraMaterial = mat
     return g
   }
   lookOf(a: ArtItem, p?: Placed | null): SculptLook {
@@ -321,34 +333,68 @@ export class ArtSystem {
   artOf(id: string): ArtItem | null { return id === NOTE_ID ? NOTE_ITEM : this.library.find((x) => x.id === id) ?? null }
   /** a placed post-it drawn with its own words (SHOW.md §6) */
   private noteItem(p: Placed): ArtItem { return { ...NOTE_ITEM, id: `note:${p.id}`, title: `post-it · ${p.note?.who ?? ''}`, data: drawNote(p.note?.text ?? '', p.note?.who ?? ''), note: p.note } }
+  private release(g: THREE.Object3D): void {
+    const mats = new Set<THREE.Material>(), textures = new Set<THREE.Texture>()
+    g.traverse((o) => {
+      const m = o as THREE.Mesh
+      if (m.geometry && !m.userData.borrowedGeometry) m.geometry.dispose()
+      if (m.material) for (const mat of Array.isArray(m.material) ? m.material : [m.material]) mats.add(mat)
+      if (o.userData.extraMaterial) mats.add(o.userData.extraMaterial)
+    })
+    for (const mat of mats) { const map = (mat as THREE.MeshStandardMaterial).map; if (map?.userData.owned) textures.add(map); mat.dispose() }
+    for (const t of textures) t.dispose()
+    g.removeFromParent()
+  }
   rebuild(): void {
-    this.layout.items = this.layout.items.filter((p) => p.art === NOTE_ID || this.library.some((a) => a.id === p.art))   // an item whose work is gone is dropped, never crashes the room
-    this.group.clear()   // every placed mesh, whatever the map says
-    this.meshes.clear()
-    for (const p of this.layout.items) {
+    if (this.disposed) return
+    // Rendering does not delete layout data when an artwork is temporarily unavailable.
+    const renderable = this.layout.items.filter((p) => this.artOf(p.art) && this.lv.levels.some((f) => f.id === p.level) && (p.kind === 'sculpture' ? p.pos?.length === 3 && p.pos.every(Number.isFinite) : this.lv.walls.some((w) => w.id === p.wall)))
+    const visible = new Set(renderable.filter((p) => !p.note || this.store?.open).map((p) => p.id))
+    for (const [id, g] of this.meshes) if (!visible.has(id)) { this.release(g); this.meshes.delete(id); this.meshKeys.delete(id) }
+    for (const p of renderable) {
       if (p.note && !this.store?.open) continue                                   // the public never sees the notes (SHOW.md §6)
       const a = p.note ? this.noteItem(p) : this.library.find((x) => x.id === p.art); if (!a) continue
+      const key = JSON.stringify([a, this.lookOf(a, p), this.models.has(a.id), [...this.tiles.values()].map(t => t.uuid), [...this.customTiles.values()].map(t => t.uuid)])
+      let g = this.meshes.get(p.id)
+      if (g && this.meshKeys.get(p.id) !== key) { this.release(g); g = undefined }
+      if (!g) { g = this.meshFor(a, false, p); g.userData.placed = p.id; this.group.add(g); this.meshes.set(p.id, g); this.meshKeys.set(p.id, key) }
       if (a.kind === 'sculpture') {
         if (!p.pos) continue
-        const g = this.meshFor(a, false, p); g.position.set(p.pos[0], p.pos[1], p.pos[2]); g.rotation.y = p.yaw ?? 0
-        g.userData = { placed: p.id }; this.group.add(g); this.meshes.set(p.id, g); continue
+        g.position.set(p.pos[0], p.pos[1], p.pos[2]); g.rotation.y = p.yaw ?? 0; continue
       }
       const w = this.lv.walls.find((x) => x.id === p.wall)
       if (!w) continue
-      const g = this.meshFor(a)
       const floorY = floorOf(this.lv, p.level).floorY
       this.placeMesh(g, w, p.u + a.w / 200, floorY + p.topY - a.h / 200)
-      g.userData = { placed: p.id }
-      this.group.add(g); this.meshes.set(p.id, g)
     }
     this.drawGuides()
   }
-  private snapshot(): string { return JSON.stringify({ items: this.layout.items, guides: this.layout.guides }) }
-  private commit(): void { this.undo.push(this.snapshot()); if (this.undo.length > 100) this.undo.shift(); this.redo = [] }
-  private restore(s: string): void { const j = JSON.parse(s); this.layout.items = j.items; this.layout.guides = j.guides; this.rebuild(); this.autosave(); this.onChange?.() }
-  doUndo(): boolean { const s = this.undo.pop(); if (!s) return false; this.redo.push(this.snapshot()); this.restore(s); return true }
-  doRedo(): boolean { const s = this.redo.pop(); if (!s) return false; this.undo.push(this.snapshot()); this.restore(s); return true }
-  autosave(): void { try { localStorage.setItem(DRAFT_KEY, JSON.stringify(this.layout)) } catch { /* private */ } this.sync() }
+  private commit(): void { this.editing = structuredClone({ items: this.layout.items, guides: this.layout.guides }) }
+  private finishEdit(): void {
+    const before = this.editing; this.editing = null; if (!before) return
+    const old = new Map(before.items.map((p) => [p.id, p])), now = new Map(this.layout.items.map((p) => [p.id, p]))
+    const items = [...new Set([...old.keys(), ...now.keys()])].filter((id) => JSON.stringify(old.get(id)) !== JSON.stringify(now.get(id))).map((id) => ({ id, before: old.get(id), after: structuredClone(now.get(id)) }))
+    const guides = JSON.stringify(before.guides) === JSON.stringify(this.layout.guides) ? undefined : { before: before.guides, after: structuredClone(this.layout.guides) }
+    for (const c of items) if (c.after) {
+      const why = this.placementWhy(c.after)
+      if (why) { this.layout.items = before.items; this.layout.guides = before.guides; this.rebuild(); bus.toast(`not changed · ${why}`, 'warn'); return }
+    }
+    if (items.length || guides) { this.undo.push({ items, guides }); if (this.undo.length > 100) this.undo.shift(); this.redo = [] }
+  }
+  private reverse(from: Edit[], to: Edit[], redo: boolean): boolean {
+    const edit = from.pop(); if (!edit) return false
+    const expect = redo ? 'before' : 'after', dest = redo ? 'after' : 'before'
+    // Undo is local to this action. Do not overwrite a work changed remotely in the meantime.
+    if (edit.items.some((c) => JSON.stringify(this.layout.items.find((p) => p.id === c.id)) !== JSON.stringify(c[expect])) || (edit.guides && JSON.stringify(this.layout.guides) !== JSON.stringify(edit.guides[expect]))) {
+      bus.toast('undo skipped · this work changed since your edit', 'warn'); return false
+    }
+    for (const c of edit.items) { this.layout.items = this.layout.items.filter((p) => p.id !== c.id); const p = c[dest]; if (p) this.layout.items.push(structuredClone(p)) }
+    if (edit.guides) this.layout.guides = structuredClone(edit.guides[dest])
+    to.push(edit); this.rebuild(); this.autosave(); this.onChange?.(); return true
+  }
+  doUndo(): boolean { return this.reverse(this.undo, this.redo, false) }
+  doRedo(): boolean { return this.reverse(this.redo, this.undo, true) }
+  autosave(): void { this.finishEdit(); try { localStorage.setItem(DRAFT_KEY, JSON.stringify(this.layout)) } catch { /* private */ } this.sync() }
   /** SHOW.md §4: every change goes to the store per item, from the diff against what the store last had */
   private sync(): void {
     if (!this.store?.open) return
@@ -363,9 +409,9 @@ export class ArtSystem {
   setShow(items: ShowItem[], art: ArtMeta[] = []): void {
     this.setArt(art)
     this.synced.clear()
-    // an empty store and a room already hung in this browser, with the door open: this browser's show becomes the store's
-    if (!items.length && this.layout.items.length && this.store?.open) { this.sync(); this.onChange?.(); return }
+    this.undo = []; this.redo = []; this.editing = null
     this.layout.items = items.map((p) => { const s = strip(p); this.synced.set(s.id, JSON.stringify(s)); return s })
+    if (this.store) this.layout.items = this.store.overlay(this.layout.items)
     this.rebuild(); try { localStorage.setItem(DRAFT_KEY, JSON.stringify(this.layout)) } catch { /* private */ } this.onChange?.()
   }
   /** the 10 s tick: what the other person did comes in; my own echoes and my in-flight edits are left alone */
@@ -389,7 +435,7 @@ export class ArtSystem {
   exportFile(): { name: string; json: string; skipped: string[] } {
     const used = new Set(this.layout.items.map((p) => p.art))
     const skipped: string[] = []
-    const art = this.local.filter((a) => used.has(a.id)).filter((a) => { const ok = Math.max(a.data?.length ?? 0, a.model?.length ?? 0) < 2_000_000 * 1.37; if (!ok) skipped.push(a.title); return ok })
+    const art = [...this.storeArt, ...this.local].filter((a) => used.has(a.id)).filter((a) => { const ok = Math.max(a.data?.length ?? 0, a.model?.length ?? 0) < 2_000_000 * 1.37; if (!ok) skipped.push(a.title); return ok })
     const out: Layout = { ...this.layout, art }
     return { name: `${this.layout.name || 'layout'}.json`, json: JSON.stringify(out, null, 1), skipped }
   }
@@ -401,7 +447,7 @@ export class ArtSystem {
     if (added) await idbSet('items', this.local)
     this.commit()
     const seen = new Set<string>(); const seenArt = new Set<string>(); let dropped = 0
-    const once = (j.items ?? []).filter((p) => { if (seenArt.has(p.art)) { dropped++; return false } seenArt.add(p.art); return true })
+    const once = (j.items ?? []).filter((p) => { if (p.art === NOTE_ID) return true; if (seenArt.has(p.art)) { dropped++; return false } seenArt.add(p.art); return true })
     this.lastImportDropped = dropped
     this.layout = { format: 'koan-hang-layout/2', name: j.name || 'layout', guides: { ...defaultGuides(), ...(j.guides ?? {}) }, items: once.map((p) => { let id = p.id || `p-${(this.seq++).toString(36)}`; while (seen.has(id)) id = `${id}-${(this.seq++).toString(36)}`; seen.add(id); return { ...p, id, kind: p.kind ?? 'painting', level: p.level ?? 'ground', snap: p.snap ?? null } }) }
     this.rebuild(); this.autosave(); this.onChange?.()
@@ -434,8 +480,9 @@ export class ArtSystem {
   }
   hold(a: ArtItem | null): void {
     if (a && this.isPlaced(a.id)) return
-    if (this.ghost) { this.scene.remove(this.ghost); this.ghost = null }
-    if (this.handMesh) { this.scene.remove(this.handMesh); this.handMesh = null }
+    if (this.ghost) { this.release(this.ghost); this.ghost = null }
+    if (this.handMesh) { this.release(this.handMesh); this.handMesh = null }
+    if (a?.note) { this.textures.get(a.id)?.dispose(); this.textures.delete(a.id) }
     this.lastHit = null
     this.held = a
     if (a) {
@@ -451,7 +498,7 @@ export class ArtSystem {
   /** the hands view: a camera-relative rest point, followed with a lag, swaying with the walk */
   private placeHand(k: number, sway = 0): void {
     const hm = this.handMesh; if (!hm) return
-    this.handTmp.copy(this.handTarget); this.handTmp.y += Math.sin(sway) * 0.006; this.handTmp.x += Math.cos(sway * 0.5) * 0.004
+    this.handTmp.copy(this.handTarget); if (!this.feel?.reduce) { this.handTmp.y += Math.sin(sway) * 0.006; this.handTmp.x += Math.cos(sway * 0.5) * 0.004 }
     this.handTmp.applyMatrix4(this.camera.matrixWorld)
     hm.position.lerp(this.handTmp, k)
     this.handQuat.copy(this.camera.quaternion).multiply(new THREE.Quaternion().setFromEuler(new THREE.Euler(-0.12, -0.45, 0.06)))
@@ -476,11 +523,42 @@ export class ArtSystem {
     }
   }
   swap(step: number): void {
-    if (!this.library.length) return
-    const i = this.held ? this.library.findIndex((x) => x.id === this.held!.id) : -1
-    this.hold(this.library[((i + step) % this.library.length + this.library.length) % this.library.length])
+    const free = this.library.filter((a) => !this.isPlaced(a.id))
+    if (!free.length) return
+    const i = this.held ? free.findIndex((x) => x.id === this.held!.id) : step > 0 ? -1 : 0
+    this.hold(free[((i + step) % free.length + free.length) % free.length])
   }
   hangWalls(): Wall[] { return this.lv.walls.filter((w) => w.hang !== false && w.draw !== false) }
+  /** The same bounds apply to hanging, nudging, resizing, alignment, imports and swaps. */
+  private placementWhy(p: Placed, a = this.artOf(p.art)): string {
+    const floor = this.lv.levels.find((f) => f.id === p.level)
+    if (!a || !floor || !Number.isFinite(p.u) || !Number.isFinite(p.topY)) return 'invalid artwork or position'
+    if (p.kind === 'sculpture') {
+      if (!p.pos || !p.pos.every(Number.isFinite)) return 'invalid sculpture position'
+      const [x, y, z] = p.pos, look = this.lookOf(a, p)
+      const r = Math.max(look.plinth?.w ?? a.w, look.plinth?.d ?? a.d) / 200
+      const floors = this.lv.floors.filter((f) => f.level === p.level)
+      if (Math.abs(y - floor.floorY) > 0.15 || ![[x, z], [x-r, z-r], [x+r, z-r], [x+r, z+r], [x-r, z+r]].every(([px,pz]) => floors.some((f) => pointInPoly(px, pz, f.poly)))) return 'off the floor'
+      for (const other of this.layout.items) if (other.id !== p.id && other.kind === 'sculpture' && other.pos && other.level === p.level) {
+        const b = this.artOf(other.art); if (b && Math.hypot(x-other.pos[0], z-other.pos[2]) < r + Math.max(other.plinth?.w ?? b.w, other.plinth?.d ?? b.d) / 200) return 'over another work'
+      }
+      return ''
+    }
+    const w = this.hangWalls().find((w) => w.id === p.wall)
+    if (!w) return 'not a hang wall'
+    const u0 = p.u, u1 = p.u + a.w / 100, top = floor.floorY + p.topY, bottom = top - a.h / 100
+    if (u0 < 0.02 || u1 > wallLength(w) - 0.02) return 'off the wall'
+    if (top > w.topY - 0.02) return 'above the wall'
+    if (bottom < Math.max(floor.floorY, w.baseY) + 0.02) return 'into the floor'
+    for (const o of w.openings) if (o.kind !== 'panel' && u1 > o.u && u0 < o.u+o.w && top-w.baseY > o.bottom && bottom-w.baseY < o.bottom+o.h) return `over the ${o.kind}`
+    for (const s of w.noHang) if (u1 > s.u && u0 < s.u+s.w) return 'no-hang strip'
+    for (const other of this.layout.items) if (other.id !== p.id && other.wall === w.id) {
+      const b = this.artOf(other.art); if (!b) continue
+      const ot = floorOf(this.lv, other.level).floorY + other.topY
+      if (u1 > other.u && u0 < other.u+b.w/100 && top > ot-b.h/100 && bottom < ot) return 'over another work'
+    }
+    return ''
+  }
 
   /** the hang wall under the crosshair: a ray against each hang wall's front face plane */
   hitWall(): HangHit | null {
@@ -515,22 +593,7 @@ export class ArtSystem {
       if (Math.abs(u0 + W - (o.u0 - gap)) < 0.15) u0 = o.u0 - gap - W
     }
     if (Math.abs(u0 + W / 2 - L / 2) < 0.10) u0 = L / 2 - W / 2
-    const u1 = u0 + W, bottom = top - H
-    let why = ''
-    if (u0 < 0.02 || u1 > L - 0.02) why = 'off the wall'
-    else if (top > w.topY - 0.02) why = 'above the wall'
-    else if (bottom < floorY + 0.02) why = 'into the floor'
-    else {
-      const bt = bottom - w.baseY, tp = top - w.baseY
-      for (const o of w.openings) if (o.kind !== 'panel' && u1 > o.u && u0 < o.u + o.w && tp > o.bottom && bt < o.bottom + o.h) { why = `over the ${o.kind}`; break }
-      if (!why) for (const s of w.noHang) if (u1 > s.u && u0 < s.u + s.w) { why = 'no-hang strip'; break }
-      if (!why) for (const p of this.layout.items.filter((p) => p.wall === w.id)) {
-        const b = this.library.find((x) => x.id === p.art); if (!b) continue
-        const pf = floorOf(this.lv, p.level).floorY
-        const ptop = pf + p.topY, pbot = ptop - b.h / 100
-        if (u1 > p.u && u0 < p.u + b.w / 100 && top > pbot && bottom < ptop) { why = 'over another work'; break }
-      }
-    }
+    const why = this.placementWhy({ id: 'preview', art: a.id, kind: 'painting', wall: w.id, level, u: u0, topY: top - floorY, snap: null }, a)
     return { hit, u0, top, ok: !why, why }
   }
   /** every frame in hang mode: move the ghost and the guides */
@@ -604,7 +667,7 @@ export class ArtSystem {
   pickup(): boolean {
     const p = this.target(); if (!p) return false
     this.selected = null
-    const a = this.library.find((x) => x.id === p.art); if (!a) return false
+    const a = p.note ? { ...this.noteItem(p), id: NOTE_ID } : this.artOf(p.art); if (!a) return false
     this.commit()
     this.layout.items = this.layout.items.filter((x) => x.id !== p.id)
     this.rebuild(); this.autosave(); this.hold(a)
@@ -617,9 +680,9 @@ export class ArtSystem {
     const g = this.meshes.get(p.id)
     if (g && this.feel) {
       // the mesh flies toward your lower right and shrinks, then the layout rebuilds without it
-      this.meshes.delete(p.id); g.userData = {}
+      this.meshes.delete(p.id); delete g.userData.placed
       const toward = new THREE.Vector3(0.35, -0.3, -0.7).applyMatrix4(this.camera.matrixWorld)
-      this.feel.takeDown(g, toward, () => { this.group.remove(g); this.rebuild(); this.onChange?.() })
+      this.feel.takeDown(g, toward, () => { this.release(g); this.rebuild(); this.onChange?.() })
       this.autosave(); this.onChange?.(); return true
     }
     this.rebuild(); this.autosave(); this.onChange?.(); return true
@@ -699,6 +762,22 @@ export class ArtSystem {
     const a = this.library.find((x) => x.id === p.art); return a ? { art: a, placed: p } : null
   }
   /** picker, texture chips, plinth fields: onto the focused work (and onto the held work's defaults) */
+  async setCustomTexture(data: string, cm: number): Promise<void> {
+    const focus = this.focus(); if (!focus || !this.store?.open) throw new Error('hold or look at a sculpture first')
+    const url = await this.store.uploadTexture(await prepPainting(data))
+    if (!this.store.open) throw new Error('the door is closed')
+    const texture = { name: 'custom', cm, url }
+    if (focus.placed) {
+      const p = this.layout.items.find((p) => p.id === focus.placed!.id && p.art === focus.art.id)
+      if (!p) throw new Error('the work moved · choose it again')
+      this.commit(); p.texture = texture; this.rebuild(); this.autosave()
+    } else {
+      focus.art.texture = texture
+      if (this.local.includes(focus.art)) await idbSet('items', this.local)
+      if (this.held?.id === focus.art.id) this.hold(focus.art)
+    }
+    this.onChange?.()
+  }
   setLook(patch: Partial<SculptLook>): boolean {
     const f = this.focus(); if (!f) return false
     if (f.placed) { this.commit(); Object.assign(f.placed, patch); this.rebuild(); this.autosave() }
@@ -706,7 +785,7 @@ export class ArtSystem {
     this.onChange?.(); return true
   }
   private drawGuides(): void {
-    this.guideLines.clear()
+    for (const child of [...this.guideLines.children]) this.release(child)
     const g = this.layout.guides
     if (g.snap === 'free') return
     const hcm = this.held?.h ?? 0
@@ -722,6 +801,15 @@ export class ArtSystem {
   }
   /** the guides follow the walker's floor */
   onLevelChange(): void { this.drawGuides() }
+  dispose(): void {
+    this.disposed = true; this.onChange = null; this.onModel = null
+    this.release(this.group); this.release(this.guideLines)
+    if (this.ghost) this.release(this.ghost)
+    if (this.handMesh) this.release(this.handMesh)
+    for (const t of new Set([...this.textures.values(), ...this.customTiles.values()])) t.dispose()
+    for (const m of this.models.values()) this.release(m)
+    this.meshes.clear(); this.meshKeys.clear(); this.models.clear(); this.textures.clear(); this.customTiles.clear()
+  }
 }
 
 export function readImage(file: File): Promise<{ data: string; w: number; h: number }> {

@@ -8,11 +8,11 @@
 </script>
 
 {#if held}
-  <div class="hands">
+  <div class="hands" class:touch-hands={ui.play?.touchControls}>
     {#if thumb}<img src={thumb} alt={held.title} />{:else}<div class="model">…</div>{/if}
     <div class="txt">
       <div class="title">{held.title}</div>
-      <div class="size">{held.w} × {held.h} × {held.d} cm</div>
+      <div class="size">H {held.h} × W {held.w} × D {held.d} cm</div>
       {#if held.kind === 'sculpture' && look}<div class="size">{look.plinth ? `plinth ${look.plinth.w} × ${look.plinth.d} × ${look.plinth.h}` : 'no plinth'}</div>{/if}
     </div>
   </div>

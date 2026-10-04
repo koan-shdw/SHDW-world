@@ -23,6 +23,8 @@ export class Renderer {
   private frame = 0
   private tick: ((dt: number) => void) | null = null
   private clock = new THREE.Clock()
+  private lifetime = new AbortController()
+  private offs: (() => void)[] = []
 
   constructor(container: HTMLElement) {
     this.container = container
@@ -40,10 +42,9 @@ export class Renderer {
     this.smaa = new SMAAPass(); this.composer.addPass(this.smaa)
     try { const q = localStorage.getItem(QUALITY_KEY); if (q === 'full' || q === 'balanced' || q === 'low') this.quality = q } catch { /* private */ }
     this.setQuality(this.quality, false)
-    window.addEventListener('resize', () => this.resize())
-    document.addEventListener('visibilitychange', () => this.setActive(!document.hidden))
-    bus.on('render_active', ({ active }) => this.setActive(active))
-    bus.on('set_quality', ({ quality }) => this.setQuality(quality))
+    window.addEventListener('resize', () => this.resize(), { signal: this.lifetime.signal })
+    document.addEventListener('visibilitychange', () => this.setActive(!document.hidden), { signal: this.lifetime.signal })
+    this.offs.push(bus.on('render_active', ({ active }) => this.setActive(active)), bus.on('set_quality', ({ quality }) => this.setQuality(quality)))
     this.resize()
   }
 
@@ -86,4 +87,10 @@ export class Renderer {
   /** one frame now, for shots and audits */
   renderOnce(): void { this.composer.render() }
   get size(): THREE.Vector2 { return this.gl.getSize(new THREE.Vector2()) }
+  dispose(): void {
+    this.active = false; cancelAnimationFrame(this.frame); this.tick = null; this.lifetime.abort()
+    for (const off of this.offs) off()
+    for (const pass of this.composer.passes) pass.dispose()
+    this.composer.dispose(); this.gl.dispose(); this.gl.forceContextLoss(); this.gl.domElement.remove()
+  }
 }

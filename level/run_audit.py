@@ -13,6 +13,7 @@ def stage(name, text, note=None):
     lines.append("")
 # stage 1: file audit
 r = subprocess.run([sys.executable, "level/audit.py"], capture_output=True, text=True, encoding="utf-8")
+if r.returncode: sys.exit(r.stderr or r.stdout or "file audit failed")
 open("docs/audit/file.txt", "w", encoding="utf-8").write(r.stdout)
 stage("Stage 1 file audit (level/audit.py)", r.stdout)
 # stage 2: fit (only the yard plan overlay exists)
@@ -21,10 +22,11 @@ lines.append("## Stage 2 fit to the scan\n\nNOT AUDITED except the yard plan ove
 for name, label in (("mesh", "Stage 3 mesh audit (koanHang.meshAudit)"), ("sky", "Stage 4 sky audit (koanHang.skyLeakAudit)")):
     p = f"docs/audit/{name}.txt"
     if not os.path.exists(p): lines.append(f"## {label}\n\nNOT AUDITED: {p} missing (run it in the browser).\n"); fails.append(f"{label}: not run"); continue
-    stale = os.path.getmtime(p) < os.path.getmtime("level/level.json")
+    stale = os.path.getmtime(p) < max(os.path.getmtime("level/level.json"), os.path.getmtime("web/src/world/room/level.ts"))
     stage(label, open(p, encoding="utf-8").read(), note="STALE: older than level.json" if stale else None)
     if stale: fails.append(f"{label}: stale")
 r8 = subprocess.run([sys.executable, "textures/check.py"], capture_output=True, text=True, encoding="utf-8")
+if r8.returncode: sys.exit(r8.stderr or r8.stdout or "texture audit failed")
 stage("Stage 8 textures (textures/check.py)", open("docs/audit/textures.txt", encoding="utf-8").read() if os.path.exists("docs/audit/textures.txt") else "")
 lines.append("## Stage 4 walk audit\n\nNOT AUDITED: flood walk not built yet.\n")
 # stage 5: shot sheets

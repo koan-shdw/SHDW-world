@@ -1,4 +1,4 @@
-PASS  18 mapped materials in MAPS
+PASS  17 mapped materials in MAPS
 PASS  concrete-path: 2048 square (2048x2048)
 PASS  concrete-path: tiles (wrap edge lr 3.6 = 0.85x inner, tb 1.9 = 0.44x)
 PASS  corten: 2048 square (2048x2048)
@@ -33,5 +33,3 @@ PASS  stringer-blue: 2048 square (2048x2048)
 PASS  stringer-blue: tiles (wrap edge lr 0.8 = 0.65x inner, tb 0.8 = 0.71x)
 PASS  steel-black: 2048 square (2048x2048)
 PASS  steel-black: tiles (wrap edge lr 2.2 = 1.28x inner, tb 1.6 = 0.93x)
-PASS  render: 2048 square (2048x2048)
-PASS  render: tiles (wrap edge lr 3.1 = 1.13x inner, tb 1.4 = 0.52x)
