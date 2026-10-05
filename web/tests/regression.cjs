@@ -7,8 +7,8 @@ const path = require('node:path');
 const { DatabaseSync } = require('node:sqlite');
 const root = path.resolve(__dirname, '../..');
 const scratch = fs.mkdtempSync(path.join(os.tmpdir(), 'shdw-test-'));
-require('esbuild').buildSync({ stdin: { contents: `export {default as worker} from './worker/src/index.ts'; export {Store} from './web/src/world/store.ts'; export {ArtSystem} from './web/src/world/art/art.ts'; export {Input} from './web/src/world/input.ts'; export {Walker} from './web/src/world/walk.ts'; export {buildLevel} from './web/src/world/room/level.ts'; export {Void} from './web/src/world/looks/void.ts'; export {EdgesPass} from './web/src/world/looks/edges.ts'; export * as THREE from './web/node_modules/three/build/three.module.js';`, resolveDir: root, loader: 'ts' }, outfile: path.join(scratch, 'project.cjs'), bundle: true, platform: 'node', format: 'cjs', define: { 'import.meta.env.VITE_STORE': '"http://local.test"' }, logLevel: 'silent' });
-const { worker, Store, ArtSystem, Input, Walker, buildLevel, Void, EdgesPass, THREE } = require(path.join(scratch, 'project.cjs'));
+require('esbuild').buildSync({ stdin: { contents: `export {default as worker} from './worker/src/index.ts'; export {Store} from './web/src/world/store.ts'; export {ArtSystem} from './web/src/world/art/art.ts'; export {Input} from './web/src/world/input.ts'; export {Walker} from './web/src/world/walk.ts'; export {buildLevel} from './web/src/world/room/level.ts'; export {Void} from './web/src/world/looks/void.ts'; export {Plants} from './web/src/world/looks/plants.ts'; export {EdgesPass} from './web/src/world/looks/edges.ts'; export * as THREE from './web/node_modules/three/build/three.module.js';`, resolveDir: root, loader: 'ts' }, outfile: path.join(scratch, 'project.cjs'), bundle: true, platform: 'node', format: 'cjs', define: { 'import.meta.env.VITE_STORE': '"http://local.test"' }, logLevel: 'silent' });
+const { worker, Store, ArtSystem, Input, Walker, buildLevel, Void, Plants, EdgesPass, THREE } = require(path.join(scratch, 'project.cjs'));
 after(() => fs.rmSync(scratch, { recursive: true, force: true }));
 const memory = new Map();
 global.localStorage = { getItem: k => memory.get(k) ?? null, setItem: (k, v) => memory.set(k, v), removeItem: k => memory.delete(k) };
@@ -17,6 +17,34 @@ global.document = { addEventListener() {}, removeEventListener() {} };
 const level = JSON.parse(fs.readFileSync(path.join(root, 'level/level.json')));
 const meta = { id: 'test-art', kind: 'painting', title: 'Test', w: 30, h: 30, d: 2, edge: 'wrap', ext: 'png', ts: 1 };
 const placed = { id: 'test-item', art: meta.id, kind: 'painting', wall: 'g-north', level: 'ground', u: 1, topY: 2, snap: null };
+
+test('hedge uses curved leaves, shared wind and shadows, and releases its GPU resources', () => {
+  const room = buildLevel(level).group, plants = new Plants(room), again = new Plants(room);
+  const leaves = plants.group.getObjectByName('individual leaves'), stems = plants.group.getObjectByName('branching stems');
+  assert.equal(plants.group.children.length, 2, 'foliage stays in two instanced draws');
+  assert.ok(leaves.isInstancedMesh && stems.isInstancedMesh && leaves.count > 1000 && leaves.count < 5000);
+  assert.deepEqual(leaves.instanceMatrix.array, again.group.getObjectByName('individual leaves').instanceMatrix.array);
+  assert.ok(leaves.instanceMatrix.array.every(Number.isFinite));
+  leaves.geometry.computeBoundingBox(); assert.ok(leaves.geometry.boundingBox.max.z - leaves.geometry.boundingBox.min.z > 0.1, 'leaves have curvature, not flat cards');
+  assert.ok(new Set(leaves.instanceColor.array).size > 100, 'natural per-leaf color variation');
+  assert.equal(leaves.material.transparent, false); assert.ok(leaves.material.map.generateMipmaps);
+  assert.ok(leaves.material.map.image.data.every(v => v >= 128), 'bright veins must not overflow the byte texture into black');
+  for (const mesh of [leaves, stems]) { assert.ok(mesh.castShadow && mesh.receiveShadow && mesh.customDepthMaterial); }
+  const shader = () => ({ uniforms: {}, vertexShader: '#include <common>\n#include <begin_vertex>', fragmentShader: '#include <lights_fragment_end>\n#include <opaque_fragment>' });
+  const visible = shader(), shadow = shader(); leaves.material.onBeforeCompile(visible); leaves.customDepthMaterial.onBeforeCompile(shadow);
+  assert.equal(visible.vertexShader, shadow.vertexShader, 'shadow silhouettes use the same wind as the leaves');
+  plants.update(12); assert.equal(visible.uniforms.uPlantTime.value, 12); assert.equal(shadow.uniforms.uPlantTime.value, 12);
+  plants.update(0); assert.equal(visible.uniforms.uPlantTime.value, 0, 'reduced motion keeps foliage still');
+  const originals = room.children.filter(m => m.isMesh && m.material.name === 'foliage');
+  assert.ok(originals.length > 0 && originals.every(m => !m.visible));
+  plants.set(false); assert.ok(originals.every(m => m.visible)); assert.equal(plants.group.visible, false);
+  plants.set(true); assert.ok(originals.every(m => !m.visible));
+  let disposed = 0;
+  const resources = [leaves, stems, leaves.geometry, stems.geometry, leaves.material, stems.material, leaves.material.map, leaves.customDepthMaterial];
+  resources.forEach(r => r.addEventListener('dispose', () => disposed++));
+  plants.dispose(); assert.equal(disposed, resources.length); again.dispose();
+  room.traverse(o => { if (o.isMesh) o.geometry.dispose(); });
+});
 
 test('volumetric smoke retains surface depth, scales quality, and respects reduced motion and sky off', () => {
   const camera = new THREE.PerspectiveCamera(70, 1, 0.05, 4000), room = new THREE.Group();

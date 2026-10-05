@@ -28,7 +28,8 @@ void main() {
   float ld = luma(texture2D(tDiffuse, vUv - vec2(0.0, px.y)).rgb), lu = luma(texture2D(tDiffuse, vUv + vec2(0.0, px.y)).rgb);
   float lumaEdge = abs(ll - lr) + abs(ld - lu);
   float edge = clamp(smoothstep(0.06, 0.25, depthEdge) + smoothstep(0.35, 0.9, lumaEdge) * 0.6, 0.0, 1.0);
-  c.rgb *= 1.0 - edge * outline * 0.85;
+  // Opaque foliage writes a softer outline weight in scene alpha; ordinary surfaces write 1.
+  c.rgb *= 1.0 - edge * outline * 0.85 * c.a;
   // --- dither: quantise in gamma space with a Bayer threshold, blend by strength
   if (dither > 0.0) {
     vec3 g = pow(max(c.rgb, 0.0), vec3(1.0 / 2.2));
@@ -37,7 +38,7 @@ void main() {
     vec3 back = pow(max(q, 0.0), vec3(2.2));
     c.rgb = mix(c.rgb, back, dither);
   }
-  gl_FragColor = c;
+  gl_FragColor = vec4(c.rgb, 1.0);
   // Preserve opaque depth for volumetric smoke after the composer swaps targets.
   gl_FragDepth = texture2D(tDepth, vUv).r;
 }`

@@ -77,5 +77,5 @@ export class Looks {
   }
 
   update(t: number, reduce = false): void { this.void.setQuality(this.r.quality); this.void.update(t, reduce); this.plants.update(reduce ? 0 : t) }
-  dispose(): void { this.off() }
+  dispose(): void { this.off(); this.plants.dispose() }
 }
