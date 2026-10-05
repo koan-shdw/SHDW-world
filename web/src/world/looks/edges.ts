@@ -38,6 +38,8 @@ void main() {
     c.rgb = mix(c.rgb, back, dither);
   }
   gl_FragColor = c;
+  // Preserve opaque depth for volumetric smoke after the composer swaps targets.
+  gl_FragDepth = texture2D(tDepth, vUv).r;
 }`
 
 /** the 8x8 Bayer matrix as a tiny repeating texture (GLSL ES 1.00 has no bit ops) */
@@ -62,7 +64,7 @@ export class EdgesPass extends Pass {
       cameraNear: { value: camera.near }, cameraFar: { value: camera.far },
       outline: { value: 1.0 }, dither: { value: 0.35 }, levels: { value: 24.0 },
     }
-    this.material = new THREE.ShaderMaterial({ uniforms: this.uniforms, vertexShader: vert, fragmentShader: frag, depthTest: false, depthWrite: false })
+    this.material = new THREE.ShaderMaterial({ uniforms: this.uniforms, vertexShader: vert, fragmentShader: frag, depthTest: true, depthWrite: true, depthFunc: THREE.AlwaysDepth })
     this.quad = new FullScreenQuad(this.material)
     this.needsSwap = true
   }

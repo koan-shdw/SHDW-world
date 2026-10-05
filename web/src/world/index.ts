@@ -71,7 +71,7 @@ export async function startWorld(container: HTMLElement, base: string): Promise<
   const looks = new Looks(renderer, built.group, new THREE.Color(level.fog?.color ?? level.sky?.fallback ?? 0x232325), DATA)
   startupCleanup.push(() => looks.dispose())
   const intro = new Intro(level, loader, base); scene.add(intro.group)
-  renderer.gl.shadowMap.enabled = true; renderer.gl.shadowMap.type = THREE.PCFSoftShadowMap   // one shadow: the plate on the red wall
+    renderer.gl.shadowMap.enabled = true; renderer.gl.shadowMap.type = THREE.PCFSoftShadowMap   // plate spotlight and distant cloud light
   built.group.traverse((o) => { const m = o as THREE.Mesh; if (m.isMesh) m.receiveShadow = true })
 
   // the room's BVH: one static mesh of every wall and floor, for occlusion queries (a work behind a wall is not looked at)
