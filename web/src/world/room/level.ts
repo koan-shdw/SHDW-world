@@ -265,6 +265,37 @@ export interface DoorRuntime {
 }
 export interface Built { group: THREE.Group; wire: THREE.Group; doors: DoorRuntime[]; lights: THREE.PointLight[] }
 
+/** The bridge's outer shell breaks into a fixed trail of smaller cubes toward +x. */
+function bridgeFragments(o: Extract<LevelObject, { kind: 'slab' }>, start: number): THREE.InstancedMesh {
+  const [a, b] = o.box, cell = 0.26, layers = 14
+  const ny = Math.ceil((b[1] - a[1]) / cell), nz = Math.ceil((b[2] - a[2]) / cell)
+  const dy = (b[1] - a[1]) / ny, dz = (b[2] - a[2]) / nz
+  let seed = Math.round(a[1] * 1234 + a[2] * 5678)
+  const random = () => { seed = (Math.imul(seed, 1664525) + 1013904223) >>> 0; return seed / 4294967296 }
+  const mesh = new THREE.InstancedMesh(new THREE.BoxGeometry(1, 1, 1), mat(o.material ?? 'concrete'), ny * nz * layers)
+  mesh.name = `${o.name} fragments`
+  const piece = new THREE.Object3D(), tint = new THREE.Color()
+  let count = 0
+  for (let y = 0; y < ny; y++) for (let z = 0; z < nz; z++) {
+    const edge = 1 + Math.floor(random() * 4)
+    for (let i = 0; i < layers; i++) {
+      const loose = Math.max(0, (i - edge) / (layers - 1 - edge))
+      if (loose > 0 && random() < loose * 0.7) continue
+      const size = cell * Math.pow(1 - loose, 1.5) + 0.012, spread = loose * loose
+      piece.position.set(start + (i + 0.5) * cell + spread * (0.7 + random() * 0.8),
+        a[1] + (y + 0.5) * dy + spread * (random() - 0.35) * 2.1,
+        a[2] + (z + 0.5) * dz + spread * (random() - 0.5) * 2.8)
+      // Attached cells retain the thin wall/roof profile; detached fragments are cubes.
+      piece.scale.set(loose ? size : cell, loose ? size : dy, loose ? size : dz)
+      piece.rotation.set((random() - 0.5) * loose, (random() - 0.5) * loose, (random() - 0.5) * loose)
+      piece.updateMatrix(); mesh.setMatrixAt(count, piece.matrix)
+      mesh.setColorAt(count++, tint.setScalar(loose ? 0.78 + random() * 0.22 : 1))
+    }
+  }
+  mesh.count = count; mesh.computeBoundingBox(); mesh.computeBoundingSphere()
+  return mesh
+}
+
 export function buildLevel(lv: Level): Built {
   const group = new THREE.Group(); group.name = 'level'
   const wire = new THREE.Group(); wire.name = 'level-wire'
@@ -524,8 +555,11 @@ export function buildLevel(lv: Level): Built {
       const m = new THREE.Mesh(new THREE.BoxGeometry(o.size[0], o.size[1], o.size[2]), mat('aircon'))
       m.position.set(o.at[0], cy - o.size[1] / 2, o.at[1]); group.add(m)
     } else if (o.kind === 'slab') {
-      const [p0, p1] = o.box
+      if (o.name === 'bridge end') continue
+      const p0 = o.box[0], p1 = [...o.box[1]]
+      if (o.name?.startsWith('bridge ')) { p1[0] -= 1.35; group.add(bridgeFragments(o, p1[0])) }
       const m = new THREE.Mesh(new THREE.BoxGeometry(p1[0] - p0[0], p1[1] - p0[1], p1[2] - p0[2]), mat(o.material ?? 'concrete'))
+      m.name = o.name ?? ''
       m.position.set((p0[0] + p1[0]) / 2, (p0[1] + p1[1]) / 2, (p0[2] + p1[2]) / 2); group.add(m)
     } else if (o.kind === 'wallbox') {
       const w = wallById.get(o.wall); if (!w) continue

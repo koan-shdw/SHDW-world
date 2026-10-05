@@ -7,8 +7,8 @@ const path = require('node:path');
 const { DatabaseSync } = require('node:sqlite');
 const root = path.resolve(__dirname, '../..');
 const scratch = fs.mkdtempSync(path.join(os.tmpdir(), 'shdw-test-'));
-require('esbuild').buildSync({ stdin: { contents: `export {default as worker} from './worker/src/index.ts'; export {Store} from './web/src/world/store.ts'; export {ArtSystem} from './web/src/world/art/art.ts'; export {Input} from './web/src/world/input.ts'; export {Walker} from './web/src/world/walk.ts'; export * as THREE from './web/node_modules/three/build/three.module.js';`, resolveDir: root, loader: 'ts' }, outfile: path.join(scratch, 'project.cjs'), bundle: true, platform: 'node', format: 'cjs', define: { 'import.meta.env.VITE_STORE': '"http://local.test"' }, logLevel: 'silent' });
-const { worker, Store, ArtSystem, Input, Walker, THREE } = require(path.join(scratch, 'project.cjs'));
+require('esbuild').buildSync({ stdin: { contents: `export {default as worker} from './worker/src/index.ts'; export {Store} from './web/src/world/store.ts'; export {ArtSystem} from './web/src/world/art/art.ts'; export {Input} from './web/src/world/input.ts'; export {Walker} from './web/src/world/walk.ts'; export {buildLevel} from './web/src/world/room/level.ts'; export * as THREE from './web/node_modules/three/build/three.module.js';`, resolveDir: root, loader: 'ts' }, outfile: path.join(scratch, 'project.cjs'), bundle: true, platform: 'node', format: 'cjs', define: { 'import.meta.env.VITE_STORE': '"http://local.test"' }, logLevel: 'silent' });
+const { worker, Store, ArtSystem, Input, Walker, buildLevel, THREE } = require(path.join(scratch, 'project.cjs'));
 after(() => fs.rmSync(scratch, { recursive: true, force: true }));
 const memory = new Map();
 global.localStorage = { getItem: k => memory.get(k) ?? null, setItem: (k, v) => memory.set(k, v), removeItem: k => memory.delete(k) };
@@ -17,6 +17,31 @@ global.document = { addEventListener() {}, removeEventListener() {} };
 const level = JSON.parse(fs.readFileSync(path.join(root, 'level/level.json')));
 const meta = { id: 'test-art', kind: 'painting', title: 'Test', w: 30, h: 30, d: 2, edge: 'wrap', ext: 'png', ts: 1 };
 const placed = { id: 'test-item', art: meta.id, kind: 'painting', wall: 'g-north', level: 'ground', u: 1, topY: 2, snap: null };
+
+test('bridge keeps its attachment and breaks into deterministic, shrinking cubes at the far end', () => {
+  const before = JSON.stringify(level), room = buildLevel(level).group, again = buildLevel(level).group;
+  assert.equal(JSON.stringify(level), before, 'rendering must not change collision or source data');
+  assert.equal(room.getObjectByName('bridge end'), undefined, 'no solid end cap behind the fragments');
+  const fragments = room.children.filter(m => m.name.endsWith(' fragments'));
+  assert.equal(fragments.length, 4);
+  const near = [], far = [], matrix = new THREE.Matrix4(), p = new THREE.Vector3(), q = new THREE.Quaternion(), s = new THREE.Vector3();
+  for (const mesh of fragments) {
+    assert.ok(mesh.isInstancedMesh && mesh.count > 0 && mesh.count < 500);
+    assert.deepEqual(mesh.instanceMatrix.array, again.getObjectByName(mesh.name).instanceMatrix.array);
+    for (let i = 0; i < mesh.count; i++) {
+      mesh.getMatrixAt(i, matrix); assert.ok(matrix.elements.every(Number.isFinite)); matrix.decompose(p, q, s);
+      if (p.x > 4.3) { assert.ok(Math.abs(s.x - s.y) < 1e-6 && Math.abs(s.x - s.z) < 1e-6); (p.x < 5.2 ? near : far).push(s.x); }
+    }
+    const name = mesh.name.replace(' fragments', ''), source = level.objects.find(o => o.name === name);
+    const base = new THREE.Box3().setFromObject(room.getObjectByName(name));
+    assert.ok(Math.abs(base.min.x - source.box[0][0]) < 1e-6, 'bridge stays attached to the building');
+    assert.ok(base.max.x < source.box[1][0] - 1, 'the outer end is replaced, not covered with particles');
+  }
+  assert.ok(near.length > 10 && far.length > 10);
+  const mean = xs => xs.reduce((a, b) => a + b, 0) / xs.length;
+  assert.ok(mean(far) < mean(near) * 0.65, 'fragments shrink into the void');
+  for (const g of [room, again]) g.traverse(o => { if (o.isMesh) o.geometry.dispose(); });
+});
 const note = { ...placed, id: 'note-one', art: 'note', note: { text: 'PRIVATE TEST NOTE', who: 'YOZO' } };
 function environment() {
   const sql = new DatabaseSync(':memory:'); sql.exec(fs.readFileSync(path.join(root, 'worker/schema.sql'), 'utf8'));
