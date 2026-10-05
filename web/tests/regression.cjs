@@ -7,8 +7,8 @@ const path = require('node:path');
 const { DatabaseSync } = require('node:sqlite');
 const root = path.resolve(__dirname, '../..');
 const scratch = fs.mkdtempSync(path.join(os.tmpdir(), 'shdw-test-'));
-require('esbuild').buildSync({ stdin: { contents: `export {default as worker} from './worker/src/index.ts'; export {Store} from './web/src/world/store.ts'; export {ArtSystem} from './web/src/world/art/art.ts'; export {Input} from './web/src/world/input.ts'; export {Walker} from './web/src/world/walk.ts'; export {buildLevel} from './web/src/world/room/level.ts'; export {Void} from './web/src/world/looks/void.ts'; export {Plants} from './web/src/world/looks/plants.ts'; export {EdgesPass} from './web/src/world/looks/edges.ts'; export * as THREE from './web/node_modules/three/build/three.module.js';`, resolveDir: root, loader: 'ts' }, outfile: path.join(scratch, 'project.cjs'), bundle: true, platform: 'node', format: 'cjs', define: { 'import.meta.env.VITE_STORE': '"http://local.test"' }, logLevel: 'silent' });
-const { worker, Store, ArtSystem, Input, Walker, buildLevel, Void, Plants, EdgesPass, THREE } = require(path.join(scratch, 'project.cjs'));
+require('esbuild').buildSync({ stdin: { contents: `export {default as worker} from './worker/src/index.ts'; export {Store} from './web/src/world/store.ts'; export {ArtSystem} from './web/src/world/art/art.ts'; export {Input} from './web/src/world/input.ts'; export {Walker} from './web/src/world/walk.ts'; export {buildLevel, updateDoors} from './web/src/world/room/level.ts'; export {doorAt} from './web/src/world/doors.ts'; export {sheltered} from './web/src/world/wind.ts'; export {Void} from './web/src/world/looks/void.ts'; export {Plants} from './web/src/world/looks/plants.ts'; export {EdgesPass} from './web/src/world/looks/edges.ts'; export * as THREE from './web/node_modules/three/build/three.module.js';`, resolveDir: root, loader: 'ts' }, outfile: path.join(scratch, 'project.cjs'), bundle: true, platform: 'node', format: 'cjs', define: { 'import.meta.env.VITE_STORE': '"http://local.test"' }, logLevel: 'silent' });
+const { worker, Store, ArtSystem, Input, Walker, buildLevel, updateDoors, doorAt, sheltered, Void, Plants, EdgesPass, THREE } = require(path.join(scratch, 'project.cjs'));
 after(() => fs.rmSync(scratch, { recursive: true, force: true }));
 const memory = new Map();
 global.localStorage = { getItem: k => memory.get(k) ?? null, setItem: (k, v) => memory.set(k, v), removeItem: k => memory.delete(k) };
@@ -318,4 +318,51 @@ test('touch walks and looks without pointer lock, shares collision code, and sto
     input.setTouchActive(true); input.touchMove(0, -1); document.hidden = true; listeners.get('visibilitychange')(); assert.equal(input.keys.size, 0);
     input.dispose();
   } finally { global.window = oldWindow; global.document = oldDocument; }
+});
+
+
+test('door clicks follow the moving leaf and cannot pass through walls, floors or distance', () => {
+  const before = JSON.stringify(level), built = buildLevel(level), camera = new THREE.PerspectiveCamera(70, 1, .05, 100);
+  const door = built.doors.find(d => d.wall.id === 'g-east' && d.type === 'swing');
+  const centre = new THREE.Vector3(), normal = new THREE.Vector3();
+  for (const open of [false, true, false]) {
+    door.open = open; updateDoors(built.doors, 1); built.group.updateMatrixWorld(true);
+    new THREE.Box3().setFromObject(door.pivot).getCenter(centre);
+    normal.set(0, 0, 1).transformDirection(door.pivot.matrixWorld);
+    camera.position.copy(centre).addScaledVector(normal, 1.2); camera.lookAt(centre);
+    assert.equal(doorAt(built.doors, built.group, camera, 'ground'), door, 'actual leaf is clickable after moving');
+    assert.equal(doorAt(built.doors, built.group, camera, 'upper'), null);
+    const blocker = new THREE.Mesh(new THREE.BoxGeometry(.5, .5, .5), new THREE.MeshBasicMaterial());
+    blocker.position.copy(centre).addScaledVector(normal, .7); built.group.add(blocker);
+    assert.equal(doorAt(built.doors, built.group, camera, 'ground'), null, 'wall blocks the click');
+    built.group.remove(blocker); blocker.geometry.dispose(); blocker.material.dispose();
+    camera.position.copy(centre).addScaledVector(normal, 4); camera.lookAt(centre);
+    assert.equal(doorAt(built.doors, built.group, camera, 'ground'), null, 'door is out of reach');
+  }
+  assert.equal(JSON.stringify(level), before, 'door interaction does not modify the real building');
+  built.group.traverse(o => { if (o.isMesh) o.geometry.dispose(); });
+});
+
+test('free mouse consumes door clicks before pointer lock; wind settings survive reload', () => {
+  const handlers = {}, input = new Input({ addEventListener: (name, fn) => handlers[name] = fn });
+  let locks = 0, clicks = 0;
+  input.settings.touchControls = false; input.lock = () => { locks++; };
+  input.onPointerUse = (x,y) => { assert.equal(x, 20); assert.equal(y, 30); clicks++; return true; };
+  handlers.mousedown({button:0, clientX:20, clientY:30}); assert.equal(clicks, 1); assert.equal(locks, 0);
+  input.onPointerUse = () => false; handlers.mousedown({button:0}); assert.equal(locks, 1);
+  input.locked = true; input.onVerb = verb => { assert.equal(verb, 'do'); input.clearClick(); };
+  handlers.mousedown({button:0}); assert.equal(input.takeClick(), false, 'handled click cannot also place artwork');
+  input.setPlay({wind:false,windVolume:37});
+  const restored = new Input({addEventListener(){}}); assert.equal(restored.settings.wind, false); assert.equal(restored.settings.windVolume, 37);
+  input.dispose(); restored.dispose(); memory.delete('shdw-world-play');
+});
+
+test('wind is sheltered by the gallery and stairs while the courtyard stays exposed', () => {
+  assert.equal(sheltered(level, 'ground', -3, 0), true);
+  assert.equal(sheltered(level, 'ground', 3, 0), false);
+  assert.equal(sheltered(level, 'ground', 6.18, 4.3), false);
+  assert.equal(sheltered(level, 'missing-floor', -3, 0), false);
+  for (const stair of level.stairs) {
+    assert.equal(sheltered({...level, floors: []}, stair.level, ...stair.from), true);
+  }
 });

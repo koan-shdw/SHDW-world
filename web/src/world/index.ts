@@ -16,6 +16,8 @@ import { Anchors } from './anchors'
 import { Looks } from './looks'
 import { Intro } from './intro'
 import { Store, TICK_MS } from './store'
+import { Wind } from './wind'
+import { doorAt } from './doors'
 import { ensureNoteFont } from './art/note'
 
 // three-mesh-bvh: the room's static geometry gets a BVH; raycasts against it are the accelerated kind
@@ -104,6 +106,8 @@ export async function startWorld(container: HTMLElement, base: string): Promise<
   walker.teleport('ground', 6.18, 4.3); walker.state.yaw = THREE.MathUtils.degToRad(42.5); walker.applyCamera(1)   // owner 09-06: start on the far square of the yard, facing the door
   const input = new Input(renderer.gl.domElement)
   startupCleanup.push(() => input.dispose())
+  const wind = new Wind(level, input.settings)
+  startupCleanup.push(() => wind.dispose())
   const feel = new Feel(); feel.reduce = input.settings.reduceMotion
   walker.keys = input.keys
   walker.headBob = input.settings.headBob && !input.settings.reduceMotion
@@ -173,6 +177,8 @@ export async function startWorld(container: HTMLElement, base: string): Promise<
   const offs: (() => void)[] = []
   startupCleanup.push(() => offs.forEach(off => off()))
   offs.push(
+    bus.on('audio_unlock', () => wind.unlock()),
+    bus.on('exhibition_enter', () => wind.enter()),
     bus.on('set_look', ({ look: l }) => { look = l; applyLook() }),
     bus.on('set_eye', ({ cm }) => { if (cm >= 100 && cm <= 220) { level.eyeHeight = cm / 100; bus.toast(`eye height ${cm} cm`) } }),
     bus.on('accent', ({ css }) => setWireColor(built.wire, css)),
@@ -194,6 +200,7 @@ export async function startWorld(container: HTMLElement, base: string): Promise<
     }),
     bus.on('set_play', ({ patch }) => {
       input.setPlay(patch)
+      wind.set(input.settings)
       if (patch.fov !== undefined) feel.fov(camera, patch.fov)
       if (patch.reduceMotion !== undefined) feel.reduce = patch.reduceMotion
       walker.headBob = input.settings.headBob && !input.settings.reduceMotion
@@ -236,11 +243,21 @@ export async function startWorld(container: HTMLElement, base: string): Promise<
   )
 
   // ---- verbs (GAME.md §1): click = do, E = touch, right click / Q = put back, R = turn, 1-0 = pick, wheel = slide ----------
-  const toggleDoor = (): boolean => {
-    const d = walker.nearestDoor(); if (!d) return false
+  const toggleDoor = (d = walker.nearestDoor(2.2)): boolean => {
+    if (!d) return false
     if (!d.opening.door?.toggle) { bus.toast('locked', 'warn'); return true }
     d.open = !d.open; return true
   }
+  const clickedDoor = (x?: number, y?: number) => {
+    if (menuOpen || bigShown || noteOpen || touch || art.held || input.ringOpen) return false
+    const rect = renderer.gl.domElement.getBoundingClientRect()
+    const pointer = x === undefined || y === undefined ? new THREE.Vector2() : new THREE.Vector2((x - rect.left) / rect.width * 2 - 1, 1 - (y - rect.top) / rect.height * 2)
+    const door = doorAt(built.doors, built.group, camera, walker.state.level, pointer)
+    if (!door) return false
+    input.clearClick(); return toggleDoor(door)
+  }
+  input.onPointerUse = clickedDoor
+  offs.push(bus.on('door_click', ({ x, y }) => { clickedDoor(x, y) }), bus.on('door_toggle', () => { if (!menuOpen && !bigShown && !noteOpen && !touch && !input.ringOpen && !art.held) { input.clearClick(); toggleDoor() } }))
   const openMenu = (tab?: string) => { if (menuOpen) return; menuOpen = true; closeTouch(); input.release(); bus.emit('menu', { show: true, tab }) }
   const closeMenu = () => { if (!menuOpen) return; menuOpen = false; bus.emit('menu', { show: false }); void input.lock() }
   let ringKind: 'actions' | 'look' = 'actions'
@@ -270,6 +287,7 @@ export async function startWorld(container: HTMLElement, base: string): Promise<
     if (verb === 'back') { if (menuOpen) closeMenu(); else if (bigShown) showMap(false); else if (touch) closeTouch(); else if (input.ringOpen) { input.closeRing(); bus.emit('ring_close', {}) } return }
     if (menuOpen) { if (verb === 'menu') closeMenu(); return }
     if (bigShown) { if (verb === 'menu' || verb === 'map') showMap(false); return }
+    if (verb === 'do' && clickedDoor()) return
     // the public door (SHOW.md §2): walk, look, the room's doors, the map, settings. Nothing moves.
     if (!ours()) { if (verb === 'touch') { if (!toggleDoor()) bus.toast('nothing to touch here', 'warn') } else if (verb === 'menu' || verb === 'keys') openMenu(verb === 'keys' ? 'keys' : undefined); else if (verb === 'map') showMap(true); else if (verb === 'debug') bus.emit('debug_toggle', {}); return }
     switch (verb) {
@@ -370,6 +388,7 @@ export async function startWorld(container: HTMLElement, base: string): Promise<
     // the click buffer: a click that came just before the ghost turned green still lands
     if (art.held && !touch && art.preview.ok && input.takeClick()) input.onVerb?.('do', new MouseEvent('mousedown'))
     const s = walker.state
+    wind.update(s.level, s.x, s.z, s.yaw)
     const locked = s.locked
     // the touch menu follows its work and closes when you walk away
     if (touch) {
@@ -394,7 +413,7 @@ export async function startWorld(container: HTMLElement, base: string): Promise<
         if (sel) hangTip = nameOf(sel.art)
       }
     }
-    const near = locked ? walker.nearestDoor() : null
+    const near = !menuOpen && !bigShown && !noteOpen && !touch && !input.ringOpen && !art.held ? walker.nearestDoor(2.2) : null
     const doorTip = near ? (near.opening.door?.toggle ? (near.open ? 'close' : 'open') : 'locked') : null
     const target = !!lookAt && !touch
     const hudKey = `${locked}|${menuOpen}|${hangTip}|${doorTip}|${target}`
@@ -443,8 +462,8 @@ export async function startWorld(container: HTMLElement, base: string): Promise<
   const dispose = () => {
     for (const off of offs) off()
     clearInterval(tick)
-    input.onVerb = null; input.onLook = null; input.onSlot = null; input.onArrow = null; input.onWheel = null
-    store.dispose(); input.dispose(); art.dispose(); looks.dispose(); roomGeo.dispose(); loader.dispose(); renderer.dispose()
+    input.onVerb = null; input.onLook = null; input.onPointerUse = null; input.onSlot = null; input.onArrow = null; input.onWheel = null
+    wind.dispose(); store.dispose(); input.dispose(); art.dispose(); looks.dispose(); roomGeo.dispose(); loader.dispose(); renderer.dispose()
   }
   bus.emit('world_ready', { hangWalls: level.walls.filter((w) => w.hang !== false).length, stairs: level.stairs.length, doors: built.doors.length, floors: level.levels.length, eyeCm: Math.round(level.eyeHeight * 100), walls: level.walls.length })
   return { renderer, level, art, walker, dispose }

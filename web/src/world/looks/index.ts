@@ -44,7 +44,7 @@ export class Looks {
     this.void = new Void(room, r.camera); r.scene.add(this.void.group)
     this.void.setQuality(r.quality); r.composer.insertPass(this.void, 2)
     this.plants = new Plants(room); r.scene.add(this.plants.group)
-    this.glass = new Glass(mat('glass'))
+    this.glass = new Glass(mat('glass'), this.void.noise)
     this.surface = new Surface(Object.keys(MAPS).map((n) => mat(n)))
     this.applyAll()
     this.off = bus.on('set_fx', ({ key, on }) => this.set(key, on))
@@ -76,6 +76,6 @@ export class Looks {
     this.surface.set(s.surface)
   }
 
-  update(t: number, reduce = false): void { this.void.setQuality(this.r.quality); this.void.update(t, reduce); this.plants.update(reduce ? 0 : t) }
+  update(t: number, reduce = false): void { this.void.setQuality(this.r.quality); this.void.update(t, reduce); this.plants.update(reduce ? 0 : t); this.glass.update(reduce ? 0 : t, this.void.flash, this.void.flashAt) }
   dispose(): void { this.off(); this.plants.dispose() }
 }

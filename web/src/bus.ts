@@ -10,7 +10,7 @@ export type FxState = Record<FxKey, boolean>
 export type Who = 'KOAN' | 'YOZO'
 export interface HistoryRow { cursor: number; ts: number; who: string; op: string; id: string; item: Record<string, unknown> | null }
 
-export interface PlaySettings { sensitivity: number; fov: number; reduceMotion: boolean; headBob: boolean; touchControls: boolean }
+export interface PlaySettings { sensitivity: number; fov: number; reduceMotion: boolean; headBob: boolean; touchControls: boolean; wind: boolean; windVolume: number }
 
 
 export interface WalkSnapshot { level: string; levelName: string; x: number; z: number; onStair: boolean; locked: boolean }
@@ -24,6 +24,10 @@ export interface RoomInfo { hangWalls: number; stairs: number; doors: number; fl
 export interface LoaderState { active: boolean; done: number; total: number; text: string }
 
 export interface Events {
+  audio_unlock: Record<string, never>
+  exhibition_enter: Record<string, never>
+  door_click: { x: number; y: number }
+  door_toggle: Record<string, never>
   save_state: { pending: number; state: 'saved' | 'saving' | 'offline' | 'error'; error: string | null }
   save_retry: Record<string, never>
   touch_session: { active: boolean }

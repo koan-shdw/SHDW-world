@@ -5,6 +5,7 @@
   const active = $derived(!ui.menuShown && !ui.mapShown && !ui.noteField && !ui.touch && !ui.slotRing)
   let moveId: number | null = null, lookId: number | null = null
   let last = { x: 0, y: 0 }
+  let lookStart = { x: 0, y: 0 }, dragged = false
   let stick = $state({ x: 0, y: 0 })
   const stop = () => { moveId = null; lookId = null; stick = { x: 0, y: 0 }; bus.emit('touch_move', { x: 0, y: 0 }) }
   $effect(() => { const on = active; if (!on) stop(); bus.emit('touch_session', { active: on }); return () => { stop(); bus.emit('touch_session', { active: false }) } })
@@ -24,11 +25,11 @@
   const endMove = (e: PointerEvent) => { if (e.pointerId === moveId) { moveId = null; stick = { x: 0, y: 0 }; bus.emit('touch_move', { x: 0, y: 0 }) } }
   const startLook = (e: PointerEvent) => {
     if (lookId !== null || !active) return
-    e.preventDefault(); lookId = e.pointerId; last = { x: e.clientX, y: e.clientY }; (e.currentTarget as HTMLElement).setPointerCapture(e.pointerId)
+    e.preventDefault(); lookId = e.pointerId; last = { x: e.clientX, y: e.clientY }; lookStart = { ...last }; dragged = false; (e.currentTarget as HTMLElement).setPointerCapture(e.pointerId)
     bus.emit('touch_session', { active: true })
   }
-  const look = (e: PointerEvent) => { if (e.pointerId !== lookId) return; bus.emit('touch_look', { dx: e.clientX - last.x, dy: e.clientY - last.y }); last = { x: e.clientX, y: e.clientY } }
-  const endLook = (e: PointerEvent) => { if (e.pointerId === lookId) lookId = null }
+  const look = (e: PointerEvent) => { if (e.pointerId !== lookId) return; if (Math.hypot(e.clientX - lookStart.x, e.clientY - lookStart.y) > 8) dragged = true; bus.emit('touch_look', { dx: e.clientX - last.x, dy: e.clientY - last.y }); last = { x: e.clientX, y: e.clientY } }
+  const endLook = (e: PointerEvent) => { if (e.pointerId !== lookId) return; lookId = null; if (!dragged && e.type === 'pointerup') bus.emit('door_click', { x: e.clientX, y: e.clientY }) }
 </script>
 
 {#if active}
@@ -38,7 +39,6 @@
     </button>
     <button class="touch-look" aria-label="drag to look" onpointerdown={startLook} onpointermove={look} onpointerup={endLook} onpointercancel={endLook} onlostpointercapture={endLook}><span>drag to look</span></button>
     <div class="touch-buttons">
-      {#if ui.hud.doorTip && ui.hud.doorTip !== 'locked'}<button onclick={() => bus.emit('touch_verb', { verb: 'touch' })}>{ui.hud.doorTip} door</button>{/if}
       {#if ui.door.open}
         <button onclick={() => bus.emit('touch_verb', { verb: 'do' })}>{ui.art?.held ? 'place work' : 'touch work'}</button>
         {#if ui.art?.held}<button onclick={() => bus.emit('touch_verb', { verb: 'putback' })}>put back</button>{/if}

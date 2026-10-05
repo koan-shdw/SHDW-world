@@ -39,18 +39,19 @@
     <div class="loadbar" title={ui.loader.text}><i style="width:{ui.loader.total ? Math.round(100 * ui.loader.done / ui.loader.total) : 0}%"></i><span>{ui.loader.text}</span></div>
   {/if}
   {#if ui.hud.hint === 'enter' && ui.room && ui.chosen && !ui.play?.touchControls}
-    <div class="hint">click to enter</div>
+    <div class="hint">Click the scene to look around<small>Esc releases the mouse</small></div>
   {/if}
   <div class="crosshair" class:target={ui.hud.target} hidden={!ui.hud.cross}></div>
-  <div class="doortip" hidden={!ui.hud.doorTip}>{ui.hud.doorTip}</div>
+  <button class="doortip" hidden={!ui.hud.doorTip} disabled={ui.hud.doorTip === 'locked'} onclick={() => bus.emit('door_toggle', {})}>{ui.hud.doorTip === 'locked' ? 'Locked' : `${ui.hud.doorTip} door`}<small>{ui.play?.touchControls ? 'tap' : 'click / E'}</small></button>
   <div class="hangtip" hidden={!ui.hud.hangTip}>{ui.hud.hangTip}</div>
   {#if ui.anchors['work']?.visible && !ui.touch}<div class="worklabel" style="left:{ui.anchors['work'].x}px; top:{ui.anchors['work'].y}px">{ui.anchors['work'].text}</div>{/if}
   <Ring {base} />
   {#if ui.door.open}<WallWidget />{/if}
 </div>
 
-<img class="logo top" src="{base}brand/logo.png" alt="CULT 2026" />
+<img class="logo top" src="{base}brand/logo.png" alt="CULT 2026" hidden={!ui.chosen} />
 <button class="settings top" onclick={() => bus.emit('menu_open', {})} hidden={ui.menuShown || !ui.chosen}>settings</button>
+<button class="sound top" hidden={ui.menuShown || !ui.chosen} aria-label={ui.play?.wind ? 'Mute wind' : 'Enable wind'} aria-pressed={ui.play?.wind ?? true} onclick={() => { bus.emit('audio_unlock', {}); bus.emit('set_play', { patch: { wind: !ui.play?.wind } }) }}>sound {ui.play?.wind ? 'on' : 'off'}</button>
 <Intro {base} />
 {#if ui.play?.touchControls && ui.room && ui.chosen}<TouchControls />{/if}
 
@@ -64,7 +65,7 @@
 {/if}
 
 <svelte:document onmousedown={outside} />
-<canvas class="minimap" class:touch-map={ui.play?.touchControls} bind:this={small}></canvas>
+<canvas class="minimap" class:touch-map={ui.play?.touchControls} bind:this={small} hidden={!ui.chosen}></canvas>
 <canvas class="bigmap" bind:this={big} hidden={!ui.mapShown} onclick={mapClick}></canvas>
 
 <div class="toasts">

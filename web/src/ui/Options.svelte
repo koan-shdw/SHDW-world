@@ -60,6 +60,8 @@
       </div>
       <div class="content">
         {#if ui.menuTab === 'controls' && ui.play}
+          <Row label="wind sound"><input type="checkbox" checked={ui.play.wind} onchange={(e) => bus.emit('set_play', { patch: { wind: (e.currentTarget as HTMLInputElement).checked } })} /></Row>
+          <Row label="wind volume"><input type="range" min="0" max="100" step="1" value={ui.play.windVolume} oninput={(e) => bus.emit('set_play', { patch: { windVolume: num(e) } })} /></Row>
           <Row label="mouse"><input type="range" min="0.3" max="3" step="0.05" value={ui.play.sensitivity} oninput={(e) => bus.emit('set_play', { patch: { sensitivity: num(e) } })} /></Row>
           <Row label="view"><input type="range" min="60" max="100" step="1" value={ui.play.fov} oninput={(e) => bus.emit('set_play', { patch: { fov: num(e) } })} /></Row>
           <Row label="eye height cm"><input type="number" min="100" max="220" step="1" bind:value={eye} onchange={() => bus.emit('set_eye', { cm: Number(eye) })} /></Row>
@@ -125,6 +127,7 @@
               {#if ui.play?.touchControls}<tr><td>left pad</td><td>drag to walk · release to stop</td></tr><tr><td>right area</td><td>drag to look · tap a door button to open or close it</td></tr>{/if}
               <tr><td>w a s d</td><td>walk · shift run</td></tr>
               <tr><td>mouse</td><td>look</td></tr>
+              <tr><td>click a door</td><td>open or close it · the door button works too</td></tr>
               <tr><td>e</td><td>open or close a nearby door</td></tr>
               {#if ui.door.open}
               <tr><td>1-9 0 · [ ]</td><td>pick a work · again puts it back</td></tr>

@@ -49,8 +49,10 @@ html, body { margin: 0; height: 100%; background: var(--bg); color: var(--txt); 
 .viewport .hangtip, .viewport .doortip, .viewport .worklabel { position: absolute; background: var(--panel); border: var(--ink); border-radius: var(--r-pill); padding: 5px 14px; font-size: 14px; color: var(--txt-hi); pointer-events: none; white-space: nowrap; box-shadow: var(--shadow-sm); animation: pop var(--d-snap) var(--e-out); }
 .viewport .hangtip { left: 50%; top: 58%; transform: translateX(-50%); }
 .viewport .doortip { left: 50%; top: 62%; transform: translateX(-50%); }
+.viewport button.doortip { pointer-events:auto; z-index:19; min-height:44px; background:#121b21ec; border:1px solid #a3c6d577; color:#eef3f5; padding:10px 18px; text-transform:none; }
+.viewport button.doortip small { display:block; color:#a6bac5; font:10px var(--mono); margin-top:3px; }
 .viewport .worklabel { transform: translate(-50%, -100%); background: var(--warn); }
-.viewport .hint { position: absolute; left: 50%; bottom: 120px; transform: translateX(-50%); color: var(--panel); font-size: 15px; text-align: center; pointer-events: none; text-shadow: 0 1px 6px rgba(0,0,0,.6); animation: bob 1.6s var(--e-out) infinite alternate; }
+.viewport .hint { position: absolute; left: 50%; bottom: 100px; transform: translateX(-50%); color:#e2e9ed; background:#121b21df; border:1px solid #ffffff20; border-radius:3px; padding:12px 20px; font-size:13px; font-weight:400; text-transform:none; text-align:center; pointer-events:none; }
 .viewport .hint small { display: block; color: var(--muted); font-size: 12px; margin-top: 4px; }
 
 /* ---------- buttons, chips, inputs ---------- */
@@ -189,6 +191,7 @@ input[type='color'] { width: 44px; height: 30px; padding: 0 2px; background: var
 .logo { display: block; filter: invert(1); }   /* the CULT mark is ink on clear; the UI is dark */
 .logo.top { position: absolute; left: 18px; top: 14px; height: 34px; width: auto; z-index: 20; pointer-events: none; }
 .settings.top { position: absolute; right: 18px; top: 14px; z-index: 20; }
+.sound.top { position:absolute; right:112px; top:14px; z-index:20; color:#b9c8cf; }
 .slot.note .paper { display: block; width: 26px; height: 26px; margin: 0 auto; background: var(--note); border-radius: 2px; box-shadow: 2px 3px 6px rgba(15,15,15,.25); transform: rotate(-4deg); }
 .slot.note.held .paper { transform: rotate(4deg) scale(1.08); }
 .notefield { position: absolute; left: 50%; top: 50%; width: 260px; padding: 16px 16px 10px; background: var(--note); border-radius: 3px; box-shadow: 0 12px 30px rgba(15,15,15,.35); z-index: 30; transform: translate(-50%, -50%) rotate(-2deg); animation: notepop .25s var(--e-back); }
@@ -225,19 +228,6 @@ input[type='color'] { width: 44px; height: 30px; padding: 0 2px; background: var
 .viewport .ring .tile.hot.swatch, .viewport .ring .tile.hot[style*="background-image"] { background-color: unset; outline: 3px solid var(--txt-hi); outline-offset: 3px; }
 
 
-/* ---------- the intro (his 09-07): choose your player ---------- */
-.intro { position: absolute; inset: 0; z-index: 60; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 26px; background: rgba(8,8,10,.86); backdrop-filter: blur(6px); animation: fadein .4s var(--e-out); }
-.intro .logo { height: 76px; width: auto; }
-.intro .choose { color: var(--txt-hi); font-size: 15px; letter-spacing: .4px; }
-.intro .players { display: flex; gap: 18px; }
-.intro .player { width: 180px; height: 150px; border-radius: 16px; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 12px; cursor: pointer; color: #fff; font-size: 24px; font-weight: 900; box-shadow: var(--shadow); transition: transform var(--d-snap) var(--e-out), box-shadow var(--d-snap); outline: none; }
-.intro .player:hover, .intro .player:focus-visible { transform: translateY(-3px); box-shadow: 0 16px 36px rgba(0,0,0,.6); }
-.intro .player.open { transform: translateY(-3px); }
-.intro .player.yozo { background: #4d7cff; }
-.intro .player.koan { background: #e5484d; }
-.intro .player.public { background: #26292f; }
-.intro .player input { width: 140px; padding: 8px 10px; border-radius: 8px; border: 0; background: rgba(255,255,255,.94); color: #0f0f0f; font: 700 14px var(--sans); text-align: center; text-transform: none; outline: none; }
-.intro .wrong { color: var(--bad); font-size: 14px; }
 
 /* Narrow panes, accessible forms and the shared save state. */
 .field { display: flex; flex-direction: column; gap: 4px; font-size: 11px; color: var(--muted); min-width: 0; }
@@ -249,10 +239,6 @@ input[type='color'] { width: 44px; height: 30px; padding: 0 2px; background: var
 .options .body { overflow: hidden; }
 .options .tabs { flex-shrink: 0; }
 .addpanel { width: 100%; box-sizing: border-box; }
-.intro .player { position: relative; border: 0; padding: 12px; box-sizing: border-box; }
-.intro .choose-player { width: 100%; flex: 1; background: transparent; border: 0; color: inherit; font: inherit; box-shadow: none; }
-.intro .choose-player:hover { transform: none; }
-.intro button { text-transform: none; }
 button:focus-visible, input:focus-visible, select:focus-visible, textarea:focus-visible { outline: 3px solid var(--accent); outline-offset: 3px; }
 .save-status { position: absolute; top: 58px; right: 18px; z-index: 20; max-width: 240px; text-align: right; color: var(--muted); font-size: 11px; }
 .save-status span { display: block; color: var(--warn); }
@@ -281,11 +267,6 @@ button:focus-visible, input:focus-visible, select:focus-visible, textarea:focus-
 @media (orientation: landscape) and (max-height: 600px) { .touch-controls.editor .touch-walk { bottom: 122px; } .touch-controls.editor .touch-look { bottom: 105px; } .minimap.touch-map { top: 60px; width: 80px; height: 64px; } .hands.touch-hands { top: 14px; left: 130px; width: 236px; } }
 .reduce-motion *, .reduce-motion *::before, .reduce-motion *::after { animation: none !important; transition: none !important; scroll-behavior: auto !important; }
 @media (max-width: 620px) {
-  .intro { padding: 20px; box-sizing: border-box; overflow: auto; gap: 20px; }
-  .intro .players { width: 100%; max-width: 420px; gap: 10px; flex-wrap: wrap; justify-content: center; }
-  .intro .player { width: calc(50% - 5px); height: 130px; min-width: 0; font-size: 22px; }
-  .intro .player input { width: 100%; box-sizing: border-box; }
-  .intro .player.public { width: 100%; height: 64px; }
   .options .panel { max-height: 94dvh; max-width: 96vw; }
   .options .body { flex-direction: column; }
   .options .tabs { width: auto; flex-direction: row; flex-wrap: wrap; padding: 8px; border-right: 0; border-bottom: var(--ink); gap: 4px; }

@@ -4,7 +4,7 @@ import { bus, type PlaySettings } from '../bus'
 
 export type Verb = 'do' | 'touch' | 'putback' | 'turn' | 'turnback' | 'cycleNext' | 'cyclePrev' | 'map' | 'menu' | 'back' | 'hands' | 'select' | 'undo' | 'redo' | 'remove' | 'debug' | 'keys' | 'gap'
 const PLAY_KEY = 'shdw-world-play'
-export const defaultPlay = (): PlaySettings => ({ sensitivity: 1.0, fov: 75, reduceMotion: window.matchMedia?.('(prefers-reduced-motion: reduce)').matches ?? false, headBob: true, touchControls: window.matchMedia?.('(pointer: coarse)').matches ?? false })
+export const defaultPlay = (): PlaySettings => ({ sensitivity: 1.0, fov: 75, reduceMotion: window.matchMedia?.('(prefers-reduced-motion: reduce)').matches ?? false, headBob: true, touchControls: window.matchMedia?.('(pointer: coarse)').matches ?? false, wind: true, windVolume: 80 })
 
 export class Input {
   readonly keys = new Set<string>()
@@ -20,6 +20,7 @@ export class Input {
   /** a click arrives here; the world reads and clears it when the moment is right (120 ms buffer) */
   clickAt = 0
   onLook: ((dx: number, dy: number) => void) | null = null
+  onPointerUse: ((x: number, y: number) => boolean) | null = null
   onVerb: ((verb: Verb, e: KeyboardEvent | MouseEvent) => void) | null = null
   onSlot: ((n: number) => void) | null = null
   onArrow: ((du: number, dy: number, e: KeyboardEvent) => void) | null = null
@@ -45,7 +46,7 @@ export class Input {
     listen(document, 'contextmenu', (e) => { e.preventDefault() })            // the game owns the right button
     listen(dom, 'mousedown', (e) => {
       if (this.settings.touchControls) return
-      if (!this.locked) { if (e.button === 0) void this.lock(); return }
+      if (!this.locked) { if (e.button === 0 && !this.onPointerUse?.(e.clientX, e.clientY)) void this.lock(); return }
       if (e.button === 0) { this.clickAt = performance.now(); this.onVerb?.('do', e) }
       else if (e.button === 2) this.onVerb?.('putback', e)
     })

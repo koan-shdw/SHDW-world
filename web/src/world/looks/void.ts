@@ -104,7 +104,7 @@ export class Void extends Pass {
   private strikeLen = 0.8
   private quality: Quality = 'full'
   private size = new THREE.Vector2(1, 1)
-  private noise: THREE.Data3DTexture
+  readonly noise: THREE.Data3DTexture
   private target = new THREE.WebGLRenderTarget(1, 1, { type: THREE.HalfFloatType, depthBuffer: false, minFilter: THREE.NearestFilter, magFilter: THREE.NearestFilter })
   private material: THREE.ShaderMaterial
   private composite: THREE.ShaderMaterial

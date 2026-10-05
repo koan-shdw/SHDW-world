@@ -1,0 +1,25 @@
+<!doctype html><html lang="en"><meta charset="utf-8"><title>Wind audio check</title>
+<style>body{background:#111820;color:#e5e9ec;font:16px system-ui;padding:30px}button,a{color:inherit;padding:12px}pre{white-space:pre-wrap}audio{display:block;margin:20px 0}</style>
+<h1>Wind audio check</h1><p>Eight seconds outdoors, eight indoors, six outdoors, then mute.</p><button id="render">Render and verify</button><pre id="result">Ready</pre><audio id="preview" controls></audio><a id="download" hidden download="wind-preview.wav">Download preview</a>
+<script type="module">
+import { createWind } from '/src/world/wind.ts';
+document.querySelector('#render').onclick = async () => {
+  const result = document.querySelector('#result'); result.textContent = 'Rendering…';
+  try {
+    const context = new OfflineAudioContext(2, 24000 * 24, 24000), wind = createWind(context);
+    for(let t = 0; t < 24; t += .1) wind.update(t, t >= 8 && t < 16 ? 1 : 0, t >= 22 ? 0 : 100, .2);
+    const buffer = await context.startRendering(), channels = [buffer.getChannelData(0), buffer.getChannelData(1)];
+    const rms = (start,end) => { let energy = 0, n = 0; for(const c of channels) for(let i = start * 24000; i < end * 24000; i++){energy += c[i] ** 2; n++} return Math.sqrt(energy/n) };
+    let peak = 0; for(const c of channels) for(const x of c){if(!Number.isFinite(x)) throw Error('Non-finite output'); peak = Math.max(peak,Math.abs(x))}
+    const outside = rms(4,7), inside = rms(12,15), muted = rms(23,24);
+    if(peak >= .99 || outside < .025 || inside >= outside / 2.5 || muted > .0001) throw Error(JSON.stringify({peak,outside,inside,muted}));
+    result.textContent = JSON.stringify({status:'PASS',peak,outdoorRms:outside,indoorRms:inside,indoorReductionDb:20*Math.log10(outside/inside),mutedRms:muted},null,2);
+    const frames = buffer.length, bytes = new ArrayBuffer(44+frames*4), view = new DataView(bytes);
+    const str = (at,s) => [...s].forEach((c,i)=>view.setUint8(at+i,c.charCodeAt(0)));
+    str(0,'RIFF'); view.setUint32(4,36+frames*4,true); str(8,'WAVE'); str(12,'fmt '); view.setUint32(16,16,true); view.setUint16(20,1,true); view.setUint16(22,2,true); view.setUint32(24,24000,true); view.setUint32(28,96000,true); view.setUint16(32,4,true); view.setUint16(34,16,true); str(36,'data'); view.setUint32(40,frames*4,true);
+    for(let i=0;i<frames;i++) for(let c=0;c<2;c++) view.setInt16(44+(i*2+c)*2, Math.max(-1,Math.min(1,channels[c][i]))*32767,true);
+    const url=URL.createObjectURL(new Blob([bytes],{type:'audio/wav'})); document.querySelector('#preview').src=url; const download=document.querySelector('#download'); download.href=url; download.hidden=false;
+    wind.dispose();
+  } catch(error) { result.textContent = 'FAIL: '+error.message; }
+};
+</script></html>
