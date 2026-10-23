@@ -104,34 +104,37 @@ test('lightning signals once per visible strike and never replays hidden or redu
   } finally { smoke.dispose(); }
 });
 
-test('bridge keeps its attachment and breaks into deterministic, shrinking cubes at the far end', () => {
-  const before = JSON.stringify(level), room = buildLevel(level).group, again = buildLevel(level).group;
+test('bridge keeps its attachment and deterministic starting fragments retain their source slab thickness', () => {
+  const before = JSON.stringify(level), built = buildLevel(level), rebuilt = buildLevel(level), room = built.group, again = rebuilt.group;
   assert.equal(JSON.stringify(level), before, 'rendering must not change collision or source data');
   assert.equal(room.getObjectByName('bridge end'), undefined, 'no solid end cap behind the fragments');
-  const fragments = room.children.filter(m => m.name.endsWith(' fragments'));
+  const fragments = built.bridges.map(b => b.fragments);
   assert.equal(fragments.length, 4);
-  const near = [], far = [], matrix = new THREE.Matrix4(), p = new THREE.Vector3(), q = new THREE.Quaternion(), s = new THREE.Vector3();
+  const matrix = new THREE.Matrix4(), p = new THREE.Vector3(), q = new THREE.Quaternion(), s = new THREE.Vector3();
   for (const mesh of fragments) {
     assert.ok(mesh.isInstancedMesh && mesh.count > 0 && mesh.count < 500);
     assert.deepEqual(mesh.instanceMatrix.array, again.getObjectByName(mesh.name).instanceMatrix.array);
+    assert.deepEqual(mesh.instanceColor.array, again.getObjectByName(mesh.name).instanceColor.array);
+    assert.deepEqual(mesh.userData.bridgeLoose, again.getObjectByName(mesh.name).userData.bridgeLoose);
+    const name = mesh.name.replace(' fragments', ''), source = level.objects.find(o => o.name === name);
+    const axis = /floor|roof/.test(name) ? 1 : 2, thickness = source.box[1][axis] - source.box[0][axis];
     for (let i = 0; i < mesh.count; i++) {
       mesh.getMatrixAt(i, matrix); assert.ok(matrix.elements.every(Number.isFinite)); matrix.decompose(p, q, s);
-      if (p.x > 4.3) { assert.ok(Math.abs(s.x - s.y) < 1e-6 && Math.abs(s.x - s.z) < 1e-6); (p.x < 5.2 ? near : far).push(s.x); }
+      assert.ok(Math.abs(s.getComponent(axis) - thickness) < 1e-6, 'attached and loose starting fragments retain the wall, floor or roof thickness');
     }
-    const name = mesh.name.replace(' fragments', ''), source = level.objects.find(o => o.name === name);
     const base = new THREE.Box3().setFromObject(room.getObjectByName(name));
     assert.ok(Math.abs(base.min.x - source.box[0][0]) < 1e-6, 'bridge stays attached to the building');
     assert.ok(base.max.x < source.box[1][0] - 1, 'the outer end is replaced, not covered with particles');
   }
-  assert.ok(near.length > 10 && far.length > 10);
-  const mean = xs => xs.reduce((a, b) => a + b, 0) / xs.length;
-  assert.ok(mean(far) < mean(near) * 0.65, 'fragments shrink into the void');
+  for (const b of [...built.bridges, ...rebuilt.bridges]) b.dispose();
   for (const g of [room, again]) g.traverse(o => { if (o.isMesh) o.geometry.dispose(); });
 });
 
 test('voxel bridge removes its actual fitted walls, rises through splitting, and finishes empty', () => {
   const before = JSON.stringify(level), built = buildLevel(level), matrix = new THREE.Matrix4();
-  const read = (mesh, i) => { mesh.getMatrixAt(i, matrix); return { p: new THREE.Vector3().setFromMatrixPosition(matrix), volume: Math.abs(matrix.determinant()) }; };
+  const read = (mesh, i) => { mesh.getMatrixAt(i, matrix); return { p: new THREE.Vector3().setFromMatrixPosition(matrix), size: new THREE.Vector3().setFromMatrixScale(matrix), volume: Math.abs(matrix.determinant()) }; };
+  const timeline = new Map();
+  const initialLoose = built.bridges.reduce((n, b) => n + b.fragments.userData.bridgeLoose.size, 0);
   let moved = 0, split = 0, faded = 0;
   for (const bridge of built.bridges) {
     const source = level.objects.find(o => o.name === bridge.shell.name), [a, b] = source.box;
@@ -152,6 +155,7 @@ test('voxel bridge removes its actual fitted walls, rises through splitting, and
     const previous = new Map();
     for (let t = 0; t <= Math.ceil(bridge.duration / 10) * 10; t += 10) {
       bridge.update(t);
+      const tally = timeline.get(t) || { parents: 0, chips: 0 }; tally.chips += bridge.chips.count; timeline.set(t, tally);
       let chipIndex = 0;
       bridge.cells.forEach((cell, cellIndex) => {
         const age = Math.max(0, t - cell.release);
@@ -163,6 +167,13 @@ test('voxel bridge removes its actual fitted walls, rises through splitting, and
           const key = `${cellIndex}:${stage}:${i}`, prior = previous.get(key);
           if (prior) assert.ok(part.p.y >= prior.y - 1e-6, 'every surviving parent and child only travels upward');
           previous.set(key, part.p);
+          if (stage === 1) {
+            assert.ok(part.size.distanceTo(cell.size) < 1e-6, 'attached and loose chunks keep their dimensions throughout flight');
+            if (age > 0) tally.parents++;
+          } else {
+            const ratio = part.size.clone().divide(cell.size);
+            assert.ok(Math.abs(ratio.x - ratio.y) < 1e-6 && Math.abs(ratio.x - ratio.z) < 1e-6, 'every child inherits its parent aspect ratio, including during fade');
+          }
           if (stage === 1 && cell.mesh === bridge.shell && age > 1) { assert.ok(part.p.y > cell.position.y); moved++; }
           if (stage !== 1) {
             split++;
@@ -180,6 +191,12 @@ test('voxel bridge removes its actual fitted walls, rises through splitting, and
     assert.equal(bridge.shell.count + bridge.fragments.count + bridge.chips.count, 0, 'the bridge does not respawn');
     bridge.dispose();
   }
+  const steady = [...timeline].filter(([t]) => t >= 210 && t <= 300).map(([, counts]) => counts);
+  const mean = values => values.reduce((sum, value) => sum + value, 0) / values.length;
+  const activeParents = mean(steady.map(c => c.parents)), activeChips = mean(steady.map(c => c.chips));
+  assert.ok(initialLoose >= activeParents * .5 && initialLoose <= activeParents * 1.5, 'starting loose blocks are comparable to the steady stream');
+  const earlyChips = Math.max(...[...timeline].filter(([t]) => t <= 180).map(([, c]) => c.chips));
+  assert.ok(earlyChips <= activeChips * 1.35, `startup must not create a chip burst (${earlyChips} early versus ${activeChips} steady)`);
   assert.ok(moved > 100 && split > 100 && faded > 100, 'the full sequence was exercised');
   assert.equal(JSON.stringify(level), before, 'animation preserves source and collision data');
 });
@@ -202,14 +219,14 @@ test('voxel splits preserve volume and position; reduced motion freezes and owne
   const volume = matrices => matrices.reduce((n, m) => n + Math.abs(m.determinant()), 0);
   const centre = matrices => matrices.reduce((v, m) => v.add(new THREE.Vector3().setFromMatrixPosition(m)), new THREE.Vector3()).divideScalar(matrices.length);
   for (const bridge of built.bridges) {
-    const cell = bridge.cells.find(c => c.mesh === bridge.fragments && c.release === 0 && c.cube > .05);
+    const cell = bridge.cells.find(c => c.mesh === bridge.fragments && c.release === 0);
     const earlier = pieces(bridge, cell, cell.split - .0001), later = pieces(bridge, cell, cell.split + .0001);
     assert.equal(later.length, 8);
     assert.ok(Math.abs(volume(earlier) - volume(later)) < 1e-7, 'splitting conserves the parent material');
     assert.ok(centre(earlier).distanceTo(centre(later)) < .0001, 'children start inside their parent without teleporting');
     const inverse = earlier[0].clone().invert(), bounds = new THREE.Box3();
     for (const m of later) for (const x of [-.5, .5]) for (const y of [-.5, .5]) for (const z of [-.5, .5]) bounds.expandByPoint(new THREE.Vector3(x, y, z).applyMatrix4(m).applyMatrix4(inverse));
-    assert.ok(bounds.min.distanceTo(new THREE.Vector3(-.5, -.5, -.5)) < .001 && bounds.max.distanceTo(new THREE.Vector3(.5, .5, .5)) < .001, 'eight children initially tile the original cube');
+    assert.ok(bounds.min.distanceTo(new THREE.Vector3(-.5, -.5, -.5)) < .001 && bounds.max.distanceTo(new THREE.Vector3(.5, .5, .5)) < .001, 'eight children initially tile the original rectangular chunk');
     const distant = pieces(bridge, cell, cell.fadeAt - .001);
     assert.ok(Math.abs(volume(distant) - volume(earlier)) < 1e-7, 'chunks retain their size until the distant fade starts');
     const freeze = [bridge.shell, bridge.fragments, bridge.chips].map(m => ({ count: m.count, matrix: m.instanceMatrix.array.slice() }));

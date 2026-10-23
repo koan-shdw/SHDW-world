@@ -266,15 +266,19 @@ export interface DoorRuntime {
 }
 export interface Built { group: THREE.Group; wire: THREE.Group; doors: DoorRuntime[]; lights: THREE.PointLight[]; bridges: VoxelBridge[] }
 
-/** The bridge's outer shell breaks into a fixed trail of smaller cubes toward +x. */
+/** The worn edge and a sparse starting trail retain the slab's thickness. */
 function bridgeFragments(o: Extract<LevelObject, { kind: 'slab' }>, start: number): THREE.InstancedMesh {
   const [a, b] = o.box, cell = 0.26, layers = 14
   const ny = Math.ceil((b[1] - a[1]) / cell), nz = Math.ceil((b[2] - a[2]) / cell)
   const dy = (b[1] - a[1]) / ny, dz = (b[2] - a[2]) / nz
   let seed = Math.round(a[1] * 1234 + a[2] * 5678)
+  // Match the later ~60-chunk flow without changing the worn edge's random sequence.
+  let densitySeed = seed ^ 0x6a09e667
   const random = () => { seed = (Math.imul(seed, 1664525) + 1013904223) >>> 0; return seed / 4294967296 }
+  const keepLoose = () => { densitySeed = (Math.imul(densitySeed, 1664525) + 1013904223) >>> 0; return densitySeed / 4294967296 < .38 }
   const mesh = new THREE.InstancedMesh(new THREE.BoxGeometry(1, 1, 1), mat(o.material ?? 'concrete'), ny * nz * layers)
   mesh.name = `${o.name} fragments`
+  mesh.userData.bridgeLoose = new Set<number>()
   const piece = new THREE.Object3D(), tint = new THREE.Color()
   let count = 0
   for (let y = 0; y < ny; y++) for (let z = 0; z < nz; z++) {
@@ -282,15 +286,18 @@ function bridgeFragments(o: Extract<LevelObject, { kind: 'slab' }>, start: numbe
     for (let i = 0; i < layers; i++) {
       const loose = Math.max(0, (i - edge) / (layers - 1 - edge))
       if (loose > 0 && random() < loose * 0.7) continue
-      const size = cell * Math.pow(1 - loose, 1.5) + 0.012, spread = loose * loose
+      const spread = loose * loose, extent = 1 - loose * .35
       piece.position.set(start + (i + 0.5) * cell + spread * (0.7 + random() * 0.8),
         a[1] + (y + 0.5) * dy + spread * (random() - 0.35) * 2.1,
         a[2] + (z + 0.5) * dz + spread * (random() - 0.5) * 2.8)
-      // Attached cells retain the thin wall/roof profile; detached fragments are cubes.
-      piece.scale.set(loose ? size : cell, loose ? size : dy, loose ? size : dz)
+      // Trim along the surface only; a starting chunk is as thick as its source slab.
+      piece.scale.set(cell * extent, dy * (dy < dz ? 1 : extent), dz * (dy < dz ? extent : 1))
       piece.rotation.set((random() - 0.5) * loose, (random() - 0.5) * loose, (random() - 0.5) * loose)
+      tint.setScalar(loose ? 0.78 + random() * 0.22 : 1)
+      if (loose && !keepLoose()) continue
+      if (loose) mesh.userData.bridgeLoose.add(count)
       piece.updateMatrix(); mesh.setMatrixAt(count, piece.matrix)
-      mesh.setColorAt(count++, tint.setScalar(loose ? 0.78 + random() * 0.22 : 1))
+      mesh.setColorAt(count++, tint)
     }
   }
   mesh.count = count; mesh.computeBoundingBox(); mesh.computeBoundingSphere()

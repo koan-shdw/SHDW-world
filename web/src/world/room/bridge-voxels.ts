@@ -4,7 +4,7 @@ type Cell = {
   mesh: THREE.InstancedMesh; index: number
   position: THREE.Vector3; rotation: THREE.Quaternion; size: THREE.Vector3; tint: THREE.Color
   release: number; split: number; fadeAt: number; end: number
-  velocity: THREE.Vector3; spin: THREE.Euler; cube: number; scatter: THREE.Vector3[]
+  velocity: THREE.Vector3; spin: THREE.Euler; scatter: THREE.Vector3[]
 }
 
 const smooth = (a: number, b: number, t: number) => THREE.MathUtils.smoothstep(t, a, b)
@@ -51,14 +51,14 @@ export class VoxelBridge {
         const position = new THREE.Vector3(), rotation = new THREE.Quaternion(), size = new THREE.Vector3(), tint = new THREE.Color(1, 1, 1)
         mesh.getMatrixAt(i, matrix); matrix.decompose(position, rotation, size)
         if (mesh.instanceColor) mesh.getColorAt(i, tint)
-        const loose = mesh === fragments && Math.abs(size.x - size.y) < 1e-5 && Math.abs(size.x - size.z) < 1e-5
+        const loose = mesh === fragments && fragments.userData.bridgeLoose.has(i)
         const release = loose ? 0 : Math.max(2, 10 + (4.05 - position.x) * 100 + (random() - .5) * 42)
         const split = 38 + random() * 42
         const velocity = new THREE.Vector3(.008 + random() * .014, .022 + random() * .022, (position.z < .06 ? -1 : 1) * (.003 + random() * .008))
         const fadeAt = Math.max(split + 32, 3.2 / velocity.y + 4)
         const scatter = Array.from({ length: 8 }, () => new THREE.Vector3((random() - .5) * .022, .002 + random() * .016, (random() - .5) * .022))
         this.cells.push({ mesh, index: i, position, rotation, size, tint, release, split, fadeAt, end: fadeAt + 48,
-          velocity, scatter, spin: new THREE.Euler((random() - .5) * .006, (random() - .5) * .009, (random() - .5) * .006), cube: Math.cbrt(size.x * size.y * size.z) })
+          velocity, scatter, spin: new THREE.Euler((random() - .5) * .006, (random() - .5) * .009, (random() - .5) * .006) })
       }
     }
     this.duration = Math.max(...this.cells.map(c => c.release + c.end))
@@ -75,7 +75,7 @@ export class VoxelBridge {
     }
     faded.customProgramCacheKey = () => 'bridge-voxel-fade'
     this.chips = new THREE.InstancedMesh(geometry, faded, this.cells.length * 8)
-    this.chips.name = `${name} split cubes`; this.chips.frustumCulled = false; this.chips.count = 0
+    this.chips.name = `${name} split fragments`; this.chips.frustumCulled = false; this.chips.count = 0
     this.chips.instanceMatrix.setUsage(THREE.DynamicDrawUsage)
     this.chips.setColorAt(0, this.tint); this.chips.instanceColor!.setUsage(THREE.DynamicDrawUsage)
   }
@@ -89,12 +89,7 @@ export class VoxelBridge {
       if (age >= cell.end) { cell.mesh.setMatrixAt(cell.index, this.hidden); continue }
       if (cell.mesh === this.shell) shellCount++; else fragmentCount++
       this.piece.position.copy(cell.position).addScaledVector(cell.velocity, drift(age))
-      // A thin attached wall cell forms a cube of the same volume as it separates.
-      const shape = smooth(0, 12, age)
-      this.piece.scale.set(
-        Math.exp(THREE.MathUtils.lerp(Math.log(cell.size.x), Math.log(cell.cube), shape)),
-        Math.exp(THREE.MathUtils.lerp(Math.log(cell.size.y), Math.log(cell.cube), shape)),
-        Math.exp(THREE.MathUtils.lerp(Math.log(cell.size.z), Math.log(cell.cube), shape)))
+      this.piece.scale.copy(cell.size)
       const spinTime = Math.min(age, cell.split)
       this.angles.set(cell.spin.x * spinTime, cell.spin.y * spinTime, cell.spin.z * spinTime)
       this.turn.setFromEuler(this.angles); this.rotation.copy(cell.rotation).multiply(this.turn)
@@ -107,10 +102,10 @@ export class VoxelBridge {
       const spread = drift(age - cell.split), fade = 1 - smooth(cell.fadeAt, cell.end, age)
       for (let x = 0; x < 2; x++) for (let y = 0; y < 2; y++) for (let z = 0; z < 2; z++) {
         // Children initially tile their parent's volume, then their cracks open upward.
-        this.offset.set((x - .5) * cell.cube / 2, (y - .5) * cell.cube / 2, (z - .5) * cell.cube / 2).applyQuaternion(this.rotation)
+        this.offset.set((x - .5) * cell.size.x / 2, (y - .5) * cell.size.y / 2, (z - .5) * cell.size.z / 2).applyQuaternion(this.rotation)
         this.piece.position.copy(cell.position).addScaledVector(cell.velocity, drift(age)).add(this.offset)
         this.piece.position.addScaledVector(cell.scatter[x * 4 + y * 2 + z], spread)
-        this.piece.scale.setScalar(cell.cube / 2 * (.55 + .45 * fade))
+        this.piece.scale.copy(cell.size).multiplyScalar(.5 * (.55 + .45 * fade))
         this.piece.updateMatrix(); this.chips.setMatrixAt(count, this.piece.matrix)
         this.chips.setColorAt(count, cell.tint); this.fade.setX(count++, fade)
       }
