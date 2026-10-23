@@ -126,7 +126,10 @@ test('bridge fragments are the actual corridor shell with no solid backing or in
         assert.ok(bounds.containsPoint(p.origin));
         assert.ok(p.normal.distanceTo(expectedNormal) < 1e-6);
         assert.ok(p.velocity.dot(expectedNormal) > 0, 'pieces leave the outer face rather than crossing the corridor interior');
+        assert.ok(p.velocity.length() < 0.06, 'solid fragments drift at less than six centimetres per second');
         assert.ok(Number.isFinite(p.release) && p.life > 0);
+        const retirement = p.origin.clone().addScaledVector(p.velocity, p.life);
+        assert.ok(bounds.distanceToPoint(retirement) > 11.9 && bounds.distanceToPoint(retirement) < 12.1, 'solid chips remain until they are well clear of the corridor');
       }
       const height = mesh.name.includes('wall') ? b[1] - a[1] : b[2] - a[2];
       const area = mesh.patches.reduce((total, p) => total + p.area, 0);
@@ -151,36 +154,73 @@ test('bridge loss recedes toward the building over one playthrough and never rec
       const standing = t => mesh.patches.filter(p => p.release > t).length;
       assert.ok(standing(0) > 0 && standing(0) < mesh.patches.length, 'the first frame is already partly disintegrated');
       assert.ok(standing(120) < standing(0) && standing(240) < standing(120) && standing(360) < standing(240));
-      assert.ok(mesh.finishedAt > 360 && mesh.finishedAt <= 480, 'the entire shell disappears slowly, within about eight minutes');
+      assert.equal(standing(480), 0, 'the actual corridor finishes eroding within about eight minutes');
+      assert.ok(Number.isFinite(mesh.finishedAt) && mesh.finishedAt > 480, 'distant debris persists beyond the loss of the corridor');
       mesh.update(120); assert.equal(mesh.time.value, 120); assert.equal(mesh.visible, true);
-      mesh.update(480); assert.equal(mesh.visible, false);
-      mesh.update(3600); assert.equal(mesh.visible, false, 'the corridor stays gone for the rest of the session');
+      mesh.update(mesh.finishedAt); assert.equal(mesh.visible, false);
+      mesh.update(mesh.finishedAt + 3600); assert.equal(mesh.visible, false, 'the corridor stays gone for the rest of the session');
       assert.ok(mesh.time.value >= mesh.finishedAt, 'time never wraps into another emission cycle');
     }
   } finally { built.bridges.forEach(m => m.dispose()); built.group.traverse(o => { if (o.isMesh && !o.userData.bridgeDecay) o.geometry.dispose(); }); }
 });
 
-test('bridge reduced motion freezes its current damage and shadows follow the same disappearing pieces', () => {
+test('bridge erosion releases small pieces continuously with overlapping, long-lived debris', () => {
+  const built = buildLevel(level);
+  try {
+    const patches = built.bridges.flatMap(mesh => mesh.patches);
+    const areas = patches.map(p => p.area).sort((a, b) => a - b);
+    assert.ok(areas[Math.floor(areas.length / 2)] < 0.035, 'surface chips are small enough to erode rather than remove large wall sections');
+    assert.ok(Math.max(...areas) < 0.07, 'large isolated panels do not dominate the stream');
+    const releases = [0, ...patches.map(p => p.release).filter(t => t > 0 && t < 420).sort((a, b) => a - b), 420];
+    assert.ok(releases.every((t, i) => i === 0 || t - releases[i - 1] < 4), 'fresh pieces keep detaching across the main erosion timeline');
+    for (let t = 0; t <= 420; t += 20) {
+      const drifting = patches.filter(p => p.release <= t && p.release + p.life > t);
+      assert.ok(drifting.length >= 60, 'many generations of debris remain together instead of one section fading before the next leaves');
+    }
+    assert.ok(patches.every(p => p.life >= 60), 'detached pieces remain visible for at least a minute');
+  } finally { built.bridges.forEach(m => m.dispose()); built.group.traverse(o => { if (o.isMesh && !o.userData.bridgeDecay) o.geometry.dispose(); }); }
+});
+
+test('bridge reduced motion freezes damage, solid shadows and the distant smoke handoff', () => {
   const built = buildLevel(level);
   try {
     for (const mesh of built.bridges) {
-      const shader = () => ({ uniforms: {}, vertexShader: '#include <common>\nvoid main() {\n#include <beginnormal_vertex>\n#include <begin_vertex>\n}', fragmentShader: '#include <common>\n#include <alphahash_fragment>' });
+      const shader = () => ({ uniforms: {}, vertexShader: '#include <common>\nvoid main() {\n#include <beginnormal_vertex>\n#include <begin_vertex>\n}', fragmentShader: '#include <common>\n#include <alphatest_fragment>\n#include <alphahash_fragment>' });
       const visible = shader(), shadow = shader();
       mesh.material.onBeforeCompile(visible); mesh.customDepthMaterial.onBeforeCompile(shadow);
       assert.equal(visible.vertexShader, shadow.vertexShader, 'lightning shadows deform with the surface geometry');
-      assert.equal(visible.fragmentShader, shadow.fragmentShader, 'surface and shadow fragments disappear together');
+      assert.equal(visible.fragmentShader, shadow.fragmentShader, 'distant surface and shadow fragments disappear together');
       assert.equal(visible.uniforms.uBridgeTime, shadow.uniforms.uBridgeTime);
-      assert.ok(mesh.material.alphaHash && mesh.customDepthMaterial.alphaHash);
+      assert.equal(mesh.material.alphaHash, false);
+      assert.equal(mesh.customDepthMaterial.alphaHash, false);
+      assert.equal(mesh.material.opacity, 1, 'nearby debris remains fully opaque');
       assert.equal(mesh.material.transparent, false, 'remaining fragments still write the depth used by smoke');
+      assert.match(visible.fragmentShader, /discard/);
+      assert.doesNotMatch(visible.fragmentShader, /diffuseColor\.a\s*\*=/, 'solid debris has no gradual opacity fade');
+      const dust = mesh.dust, dustPosition = dust.geometry.getAttribute('position'), dustVelocity = dust.geometry.getAttribute('dustVelocity');
+      const point = new THREE.Vector3(), source = level.objects.find(o => o.name === mesh.name);
+      const bounds = new THREE.Box3(new THREE.Vector3(...source.box[0]), new THREE.Vector3(...source.box[1]));
+      const retirements = new Map(mesh.patches.map(p => [p.release + p.life, p]));
+      assert.equal(dust.parent, mesh);
+      assert.equal(dust.material.uniforms.uTime, mesh.time, 'smoke pauses and resumes with the same bridge clock');
+      assert.equal(dustPosition.count, dust.releases.length * 3, 'distant smoke has a fixed small pool per chip');
+      for (let i = 0; i < dust.releases.length; i++) {
+        const release = dust.releases[i], patch = retirements.get(release.start);
+        assert.ok(patch, 'smoke starts exactly when its solid chip retires');
+        assert.ok(bounds.distanceToPoint(release.position) > 11.7, 'smoke forms well away from the corridor');
+        assert.ok(release.velocity.distanceTo(patch.velocity) < 1e-8, 'smoke continues in the departing chip direction');
+        assert.ok(point.fromBufferAttribute(dustPosition, i * 3).distanceTo(release.position) < 1e-5);
+        assert.ok(point.fromBufferAttribute(dustVelocity, i * 3).distanceTo(release.velocity) < 1e-7);
+      }
       mesh.update(120); assert.equal(visible.uniforms.uBridgeTime.value, 120);
       mesh.update(240, true); assert.equal(visible.uniforms.uBridgeTime.value, 120); assert.equal(mesh.visible, true);
       mesh.update(121); assert.equal(visible.uniforms.uBridgeTime.value, 121);
-      mesh.update(480); assert.equal(mesh.visible, false);
-      mesh.update(0, true); assert.equal(visible.uniforms.uBridgeTime.value, 480); assert.equal(mesh.visible, false, 'enabling reduced motion cannot rebuild an already vanished bridge');
+      mesh.update(mesh.finishedAt); assert.equal(mesh.visible, false);
+      mesh.update(0, true); assert.equal(visible.uniforms.uBridgeTime.value, mesh.finishedAt); assert.equal(mesh.visible, false, 'enabling reduced motion cannot rebuild an already vanished bridge');
       let disposed = 0, sharedDisposed = 0;
       const shared = mat(level.objects.find(o => o.name === mesh.name).material);
       shared.addEventListener('dispose', () => sharedDisposed++);
-      const resources = [mesh.geometry, mesh.material, mesh.customDepthMaterial];
+      const resources = [mesh.geometry, mesh.material, mesh.customDepthMaterial, dust.geometry, dust.material];
       resources.forEach(resource => resource.addEventListener('dispose', () => disposed++));
       mesh.dispose(); assert.equal(disposed, resources.length); assert.equal(sharedDisposed, 0);
     }
