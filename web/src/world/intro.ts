@@ -1,10 +1,8 @@
-// The intro (owner 09-06/07): you start on the far square of the yard. The CULT letters float 10 cm off the red wall under a
-// spotlight that breathes and flickers and throws their shadow. Yozo's words stand opposite the door as a mountain: solid
+// The intro: the red wall stays lit by a spotlight that breathes and flickers. Yozo's words stand opposite the door as a mountain: solid
 // upright letters 60 m tall, 400 m out, a column 900 m wide and 1.6 km tall starting below the ground that you crane your neck
 // at, lit by the light and the lightning (mountain.ts). Nothing else floats in the yard: he will instruct the rest.
 import * as THREE from 'three'
 import type { Level } from './room/level'
-import type { Loader } from './loader'
 import { Mountain } from './mountain'
 
 export const YOZO_QUOTE = [
@@ -20,26 +18,13 @@ export class Intro {
   readonly mountain: Mountain
   private baseIntensity = 18
 
-  constructor(lv: Level, loader: Loader, base: string) {
+  constructor(lv: Level, base: string) {
     const wall = lv.walls.find((w) => w.id === 'c-5')
     const floorY = lv.levels.find((l) => l.id === 'ground')?.floorY ?? -5.54
     const cx = wall ? (wall.a[0] + wall.b[0]) / 2 : 2.05, wz = wall ? wall.a[1] : -3.12, top = wall ? wall.topY : floorY + 1.75
     const face = wz + (wall?.thickness ?? 0.14) / 2
-    // the letters: the PNG's alpha is the shape (63.7 % of it is clear), 2.07 m wide (80 % of the wall, then 10 % smaller), 10 cm off the face
-    const W = 2.07, H = W * 656 / 1034
     const cy = (floorY + top) / 2 + 0.02
-    const mat = new THREE.MeshStandardMaterial({ color: 0xffffff, roughness: 0.8, metalness: 0.15, transparent: true, alphaTest: 0.5, side: THREE.DoubleSide })
-    const plate = new THREE.Mesh(new THREE.PlaneGeometry(W, H), mat)
-    plate.position.set(cx, cy, face + 0.10)
-    plate.castShadow = true; plate.userData = { kind: 'intro-plate' }
-    const depth = new THREE.MeshDepthMaterial({ depthPacking: THREE.RGBADepthPacking, alphaTest: 0.5 })   // the shadow is the letters too
-    plate.customDepthMaterial = depth
-    this.group.add(plate)
-    loader.image(`${base}brand/logo.png`, 'room', { anisotropy: 8 }).then((tex) => {
-      mat.map = tex; mat.needsUpdate = true          // the map's own alpha is the shape (an alphaMap would read the green channel)
-      depth.map = tex; depth.needsUpdate = true
-    }).catch(() => undefined)
-    // the spotlight: from above and in front, aimed at the letters; it breathes and flickers; it casts their shadow on the red
+    // Keep the existing illumination on the red wall after removing its lettering.
     this.spot = new THREE.SpotLight(0xfff1dc, this.baseIntensity, 8, 0.38, 0.6, 1.3)
     this.spot.position.set(cx + 0.3, top + 1.6, face + 1.7)
     this.spot.target.position.set(cx, cy, face)

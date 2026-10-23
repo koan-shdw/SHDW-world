@@ -74,8 +74,8 @@ export async function startWorld(container: HTMLElement, base: string): Promise<
 
   const looks = new Looks(renderer, built.group, new THREE.Color(level.fog?.color ?? level.sky?.fallback ?? 0x232325), DATA)
   startupCleanup.push(() => looks.dispose())
-  const intro = new Intro(level, loader, base); scene.add(intro.group)
-    renderer.gl.shadowMap.enabled = true; renderer.gl.shadowMap.type = THREE.PCFSoftShadowMap   // plate spotlight and distant cloud light
+  const intro = new Intro(level, base); scene.add(intro.group)
+    renderer.gl.shadowMap.enabled = true; renderer.gl.shadowMap.type = THREE.PCFSoftShadowMap   // courtyard spotlight and distant cloud light
   built.group.traverse((o) => { const m = o as THREE.Mesh; if (m.isMesh) m.receiveShadow = true })
 
   // the room's BVH: one static mesh of every wall and floor, for occlusion queries (a work behind a wall is not looked at)
@@ -420,7 +420,7 @@ export async function startWorld(container: HTMLElement, base: string): Promise<
         if (sel) hangTip = nameOf(sel.art)
       }
     }
-    const near = !menuOpen && !bigShown && !noteOpen && !touch && !input.ringOpen && !art.held ? walker.nearestDoor(2.2) : null
+    const near = !menuOpen && !bigShown && !noteOpen && !touch && !input.ringOpen && !art.held && !lookAt ? walker.nearestDoor(2.2) : null
     const doorTip = near ? (near.opening.door?.toggle ? (near.open ? 'close' : 'open') : 'locked') : null
     const target = !!lookAt && !touch
     const hudKey = `${locked}|${menuOpen}|${hangTip}|${doorTip}|${target}`
@@ -431,10 +431,22 @@ export async function startWorld(container: HTMLElement, base: string): Promise<
     if (walkKey !== lastWalk) { lastWalk = walkKey; bus.emit('walk_state', { level: s.level, levelName: floorOf(level, s.level).name, x: s.x, z: s.z, onStair: !!s.onStair, locked }) }
     minimap?.draw(s)
     intro.update(input.settings.reduceMotion ? 0 : elapsed, input.settings.reduceMotion ? 0 : looks.void.flash, looks.void.flashAt)
-    // anchors: the wall widget rides the ghost; a touchable work carries its prompt
+    // anchors: the wall widget rides the ghost; artwork captions sit below the work
     anchors.set('hang-widget', locked && art.held?.kind === 'painting' && art.preview.hit ? art.preview.hit.point : null)
-    if (lookAt && !touch) { const a = art.artOf(lookAt.art); const pf = floorOf(level, lookAt.level).floorY; const w = level.walls.find((x) => x.id === lookAt.wall); if (a && w && lookAt.kind === 'painting') { const [dx, dz] = [w.b[0] - w.a[0], w.b[1] - w.a[1]]; const L = Math.hypot(dx, dz) || 1; const uc = lookAt.u + a.w / 200; anchors.set('work', new THREE.Vector3(w.a[0] + dx / L * uc, pf + lookAt.topY + 0.08, w.a[1] + dz / L * uc), ours() ? (lookAt.note ? `${lookAt.note.who} · touch` : 'touch') : a.title) } else if (a && lookAt.pos) anchors.set('work', new THREE.Vector3(lookAt.pos[0], lookAt.pos[1] + a.h / 100 + (lookAt.plinth?.h ?? 0) / 100 + 0.1, lookAt.pos[2]), ours() ? 'touch' : a.title) }
-    else anchors.set('work', null)
+    anchors.set('work', null)
+    if (lookAt && !touch) {
+      const a = art.artOf(lookAt.art)
+      const w = level.walls.find((wall) => wall.id === lookAt.wall)
+      if (a && w && lookAt.kind === 'painting') {
+        const dx = w.b[0] - w.a[0], dz = w.b[1] - w.a[1], length = Math.hypot(dx, dz) || 1
+        const centre = lookAt.u + a.w / 200
+        const bottom = floorOf(level, lookAt.level).floorY + lookAt.topY - a.h / 100
+        anchors.set('work', new THREE.Vector3(w.a[0] + dx / length * centre, bottom - 0.08, w.a[1] + dz / length * centre), ours() ? (lookAt.note ? `${lookAt.note.who} · touch` : 'touch') : a.title)
+      } else if (a && lookAt.pos) {
+        const plinthHeight = (art.lookOf(a, lookAt).plinth?.h ?? 0) / 100
+        anchors.set('work', new THREE.Vector3(lookAt.pos[0], lookAt.pos[1] + plinthHeight - 0.08, lookAt.pos[2]), ours() ? 'touch' : a.title)
+      }
+    }
     const sz = renderer.size; anchors.publish(camera, sz.x, sz.y)
   })
 
