@@ -1,5 +1,5 @@
 // Walk mode (SPEC s5.2): pointer-lock first person, WASD, collision against the level's nav data only
-// (walls with openings + door state, floors, stairs, blockers). Never the render meshes.
+// (walls with openings + door state, floors, stairs, blockers and sculpture bounds). Never the render meshes.
 import * as THREE from 'three'
 import { type Level, type Wall, type Stair, type DoorRuntime, floorOf, pointInPoly, stairRect, stairProgress, inRect, wallLength, wallDir, doorCentre } from './room/level'
 
@@ -8,12 +8,14 @@ const SPEED = 2.2, RUN = 4.2
 const LOOK = 0.0022
 
 export interface WalkState { level: string; x: number; z: number; feetY: number; yaw: number; pitch: number; onStair: string | null; locked: boolean }
+export interface WalkObstacle { level: string; x: number; z: number; yaw: number; bounds: THREE.Box3 }
 export type Footing = 'concrete' | 'checker' | 'wood' | 'gravel'
 
 export class Walker {
   readonly camera: THREE.PerspectiveCamera
   state: WalkState
   doors: DoorRuntime[] = []
+  obstacles: WalkObstacle[] = []
   keys: Set<string> = new Set()                        // fed by Input
   private lv: Level
   private dom: HTMLElement
@@ -123,12 +125,22 @@ export class Walker {
   private step(x: number, z: number): boolean {
     const s = this.state
     let px = x, pz = z
-    for (let iter = 0; iter < 3; iter++) {
+    for (let iter = 0; iter < 4; iter++) {
       let moved = false
       for (const w of this.lv.walls) {
         if (!this.wallActive(w)) continue
         const r = this.pushOut(px, pz, w)
-        if (r) { px = r[0]; pz = r[1]; moved = true }
+        if (r) {
+          if (iter === 3 && Math.hypot(r[0] - px, r[1] - pz) > 1e-6) return false
+          px = r[0]; pz = r[1]; moved = true
+        }
+      }
+      for (const o of this.obstacles) {
+        const r = this.pushObstacle(px, pz, o)
+        if (r) {
+          if (iter === 3 && Math.hypot(r[0] - px, r[1] - pz) > 1e-6) return false
+          px = r[0]; pz = r[1]; moved = true
+        }
       }
       if (!moved) break
     }
@@ -146,8 +158,29 @@ export class Walker {
 
   private wallActive(w: Wall): boolean {
     const s = this.state
-    if (w.level !== s.level) return false
+    // Full-height skins still surround the walker between stair landings.
     return w.topY > s.feetY + 0.3 && w.baseY < s.feetY + 1.5
+  }
+
+  private pushObstacle(x: number, z: number, o: WalkObstacle): [number, number] | null {
+    const { min, max } = o.bounds, s = this.state
+    if (max.y <= s.feetY + 0.01 || min.y >= s.feetY + 1.5) return null
+    const c = Math.cos(o.yaw), sn = Math.sin(o.yaw)
+    let lx = c * (x - o.x) - sn * (z - o.z), lz = sn * (x - o.x) + c * (z - o.z)
+    const cx = THREE.MathUtils.clamp(lx, min.x, max.x), cz = THREE.MathUtils.clamp(lz, min.z, max.z)
+    const dx = lx - cx, dz = lz - cz, d = Math.hypot(dx, dz)
+    if (d >= RADIUS) return null
+    if (d > 1e-8) { lx = cx + dx / d * RADIUS; lz = cz + dz / d * RADIUS }
+    else {
+      const face = [lx - min.x, max.x - lx, lz - min.z, max.z - lz]
+      switch (face.indexOf(Math.min(...face))) {
+        case 0: lx = min.x - RADIUS; break
+        case 1: lx = max.x + RADIUS; break
+        case 2: lz = min.z - RADIUS; break
+        case 3: lz = max.z + RADIUS; break
+      }
+    }
+    return [o.x + c * lx + sn * lz, o.z - sn * lx + c * lz]
   }
 
   private doorOpen(w: Wall, u: number): boolean {
@@ -166,7 +199,9 @@ export class Walker {
     if (d >= pad) return null
     for (const o of w.openings) {
       if (o.kind !== 'door') continue
-      if (u > o.u + RADIUS * 0.6 && u < o.u + o.w - RADIUS * 0.6 && o.h > 1.6 && this.doorOpen(w, o.u)) return null
+      const bottom = w.baseY + o.bottom
+      if (u > o.u + RADIUS * 0.6 && u < o.u + o.w - RADIUS * 0.6
+        && bottom <= this.state.feetY + 0.05 && bottom + o.h > this.state.feetY + 1.6 && this.doorOpen(w, o.u)) return null
     }
     if (d < 1e-6) {
       const nx = w.facing === '+x' ? 1 : w.facing === '-x' ? -1 : 0

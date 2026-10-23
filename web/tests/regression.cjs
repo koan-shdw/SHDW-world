@@ -488,6 +488,101 @@ test('artwork removal and placement check references inside the write transactio
   assert.equal((await read(env)).art[0].kind, 'painting');
 });
 
+test('sculpture collision follows the loaded model, plinth, rotation, movement and removal', async () => {
+  const camera = new THREE.PerspectiveCamera(), walker = new Walker(level, camera, {});
+  let loaded;
+  const a = new ArtSystem(level, new THREE.Scene(), walker, camera, '', { model: () => new Promise(resolve => loaded = resolve) });
+  const sculpture = { id: 'solid-sculpture', kind: 'sculpture', title: 'Solid', w: 20, h: 100, d: 20, edge: 'wrap', ext: 'glb', ts: 1 };
+  const copy = { id: 'solid-copy', art: sculpture.id, kind: 'sculpture', wall: '', level: 'ground', u: 0, topY: 0, snap: null, pos: [-3, -5.54, 0], yaw: 0, plinth: { w: 40, d: 80, h: 100, colour: '#ffffff' } };
+  const walk = (x, z, yaw, keys = ['KeyW'], ticks = 180, dt = 1/120, floor = 'ground') => {
+    walker.teleport(floor, x, z); walker.state.yaw = yaw; walker.setLocked(true); walker.keys = new Set(keys);
+    for (let i = 0; i < ticks; i++) walker.update(dt);
+    return { ...walker.state };
+  };
+  try {
+    a.setShow([copy], [sculpture]);
+    assert.ok(Math.abs(walk(-3, 1.6, 0).z - .65) < 1e-6, 'the plinth blocks the player while the model loads');
+    assert.ok(Math.abs(walk(-3, 1.6, 0, ['KeyW', 'ShiftLeft'], 30, .05).z - .65) < 1e-6, 'running through a slow frame cannot skip the plinth');
+    const slid = walk(-3, .66, 0, ['KeyW', 'KeyD'], 95);
+    assert.ok(slid.x > -2 && slid.z < 0, 'diagonal movement slides around the sculpture');
+    const model = new THREE.Group(), mesh = new THREE.Mesh(new THREE.BoxGeometry(2, 2, .4), new THREE.MeshStandardMaterial());
+    mesh.position.set(4, 3, 5); model.add(mesh); loaded(model); await new Promise(setImmediate);
+    assert.ok(Math.abs(walk(-4.5, 0, -Math.PI/2).x + 3.75) < 1e-6, 'loaded model bounds use its real proportions and typed height');
+    a.applyShow([{ ...copy, yaw: Math.PI/2 }], []);
+    assert.ok(Math.abs(walk(-3, 1.6, 0).z - .75) < 1e-6, 'collision rotates with the model');
+    a.applyShow([{ ...copy, yaw: Math.PI/4 }], []);
+    const angled = walk(-3 - 1.3 * Math.SQRT1_2, 1.3 * Math.SQRT1_2, -Math.PI/4);
+    assert.ok(Math.abs(angled.x + 3 + .75 * Math.SQRT1_2) < 1e-6 && Math.abs(angled.z - .75 * Math.SQRT1_2) < 1e-6, 'oblique collisions follow the rotated face rather than a world-aligned box');
+    const moved = { ...copy, pos: [-1.5, -5.54, 0], yaw: Math.PI/2, plinth: { ...copy.plinth, w: 120, d: 160 } };
+    a.applyShow([moved], []);
+    assert.ok(walk(-3, 1.6, 0).z < -1, 'moving the sculpture clears its old location');
+    assert.ok(Math.abs(walk(-1.5, 1.6, 0).z - .85) < 1e-6, 'changed plinth dimensions update collision');
+    assert.ok(walk(-1.5, 1.6, 0, ['KeyW'], 180, 1/120, 'first').z < -1, 'the sculpture does not block the floor above');
+    a.applyShow([], [copy.id]);
+    assert.equal(walker.obstacles.length, 0);
+    assert.ok(walk(-1.5, 1.6, 0).z < -1, 'taking a sculpture down clears its collision');
+    a.setShow([copy], [sculpture]); assert.ok(walker.obstacles.length > 0);
+  } finally { a.dispose(); }
+  assert.equal(walker.obstacles.length, 0, 'leaving the scene clears its collision');
+});
+
+test('both stair flights descend against the window and remain walkable in both directions', () => {
+  const built = buildLevel(level), west = level.walls.find(w => w.id === 'g-west');
+  try {
+    for (const stair of level.stairs) for (const dt of [1/120, .05]) {
+      const walker = new Walker(level, new THREE.PerspectiveCamera(), {}); walker.doors = built.doors;
+      walker.teleport(stair.to, stair.from[0], stair.from[1] + stair.run + .13);
+      walker.state.yaw = 0; walker.setLocked(true); walker.keys = new Set(['KeyW', 'KeyA']);
+      for (let i = 0; i < Math.ceil(5/dt); i++) {
+        walker.update(dt);
+        assert.ok(walker.state.x >= west.a[0] + .25 + west.thickness/2 - 1e-6, 'the player stays inside the window throughout descent');
+      }
+      assert.equal(walker.state.level, stair.level); assert.equal(walker.state.onStair, null);
+      assert.ok(walker.state.z < stair.from[1] - .2, 'diagonal descent reaches the bottom landing');
+      assert.equal(walker.state.feetY, stair.bottomY);
+      walker.teleport(stair.level, stair.from[0], stair.from[1] - .25);
+      walker.state.yaw = Math.PI; walker.keys = new Set(['KeyW']);
+      for (let i = 0; i < Math.ceil(2.1/dt); i++) walker.update(dt);
+      assert.equal(walker.state.level, stair.to); assert.equal(walker.state.onStair, null);
+      assert.ok(walker.state.z > stair.from[1] + stair.run + .05, 'center ascent reaches the top landing');
+      assert.equal(walker.state.feetY, stair.topY);
+      walker.state.yaw = 0;
+      for (let i = 0; i < Math.ceil(2.1/dt); i++) walker.update(dt);
+      assert.equal(walker.state.level, stair.level); assert.equal(walker.state.onStair, null);
+      assert.equal(walker.state.feetY, stair.bottomY);
+    }
+  } finally {
+    built.bridges.forEach(b => b.dispose()); built.group.traverse(o => { if (o.isMesh) o.geometry.dispose(); });
+  }
+});
+
+test('full-height walls only admit the door aperture at the current walking height', () => {
+  const built = buildLevel(level), walker = new Walker(level, new THREE.PerspectiveCamera(), {});
+  walker.doors = built.doors;
+  const wall = level.walls.find(w => w.id === 'g-east'), door = built.doors.find(d => d.wall === wall && d.opening.bottom === 0);
+  const z = wall.a[1] + door.opening.u + door.opening.w/2;
+  try {
+    walker.teleport('ground', -.6, z); walker.state.yaw = -Math.PI/2; walker.setLocked(true); walker.keys.add('KeyW');
+    for (let i = 0; i < 100; i++) walker.update(1/120);
+    assert.ok(walker.state.x > .8, 'the open ground entrance still works');
+    door.open = false; door.t = 0;
+    walker.teleport('ground', -.6, z);
+    for (let i = 0; i < 100; i++) walker.update(1/120);
+    assert.ok(walker.state.x <= wall.a[0] - .25 - wall.thickness/2 + 1e-6, 'closed doors remain solid');
+    door.open = true; door.t = 1;
+    walker.teleport('first', -.6, z);
+    assert.ok(walker.pushOut(wall.a[0] - .1, z, wall), 'an open ground door is solid above its lintel');
+    const upper = built.doors.find(d => d.wall === wall && d.opening.bottom > 0);
+    const upperZ = wall.a[1] + upper.opening.u + upper.opening.w/2;
+    upper.open = true; upper.t = 1;
+    assert.equal(walker.pushOut(wall.a[0] - .1, upperZ, wall), null, 'an upper door aperture uses its own base height');
+    walker.teleport('ground', -.6, upperZ);
+    assert.ok(walker.pushOut(wall.a[0] - .1, upperZ, wall), 'an upper door does not open the glass below it');
+  } finally {
+    built.bridges.forEach(b => b.dispose()); built.group.traverse(o => { if (o.isMesh) o.geometry.dispose(); });
+  }
+});
+
 test('touch walks and looks without pointer lock, shares collision code, and stops on pause', async () => {
   const listeners = new Map(); const oldWindow = window, oldDocument = document;
   global.window = { ...oldWindow, addEventListener: (name, fn) => listeners.set(name, fn) };

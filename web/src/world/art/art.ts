@@ -288,6 +288,8 @@ export class ArtSystem {
       const ph2 = new THREE.Mesh(new THREE.BoxGeometry(a.w / 100, a.h / 100, a.d / 100), mat); ph2.position.y = ph + a.h / 200; g.add(ph2)
     }
     if (ghost) g.traverse((o) => { const m = o as THREE.Mesh; if (m.isMesh) { const mm = m.material as THREE.MeshStandardMaterial; mm.transparent = true; mm.opacity = 0.6; mm.depthWrite = false } })
+    // Cache local bounds once; walking uses boxes, never the model's triangles.
+    g.userData.walkBounds = g.children.map((child) => new THREE.Box3().setFromObject(child))
     g.userData.extraMaterial = mat
     return g
   }
@@ -347,6 +349,7 @@ export class ArtSystem {
   }
   rebuild(): void {
     if (this.disposed) return
+    this.walker.obstacles = []
     // Rendering does not delete layout data when an artwork is temporarily unavailable.
     const renderable = this.layout.items.filter((p) => this.artOf(p.art) && this.lv.levels.some((f) => f.id === p.level) && (p.kind === 'sculpture' ? p.pos?.length === 3 && p.pos.every(Number.isFinite) : this.lv.walls.some((w) => w.id === p.wall)))
     const visible = new Set(renderable.filter((p) => !p.note || this.store?.open).map((p) => p.id))
@@ -360,7 +363,12 @@ export class ArtSystem {
       if (!g) { g = this.meshFor(a, false, p); g.userData.placed = p.id; this.group.add(g); this.meshes.set(p.id, g); this.meshKeys.set(p.id, key) }
       if (a.kind === 'sculpture') {
         if (!p.pos) continue
-        g.position.set(p.pos[0], p.pos[1], p.pos[2]); g.rotation.y = p.yaw ?? 0; continue
+        g.position.set(p.pos[0], p.pos[1], p.pos[2]); g.rotation.y = p.yaw ?? 0
+        for (const local of g.userData.walkBounds as THREE.Box3[]) {
+          const bounds = local.clone(); bounds.min.y += p.pos[1]; bounds.max.y += p.pos[1]
+          this.walker.obstacles.push({ level: p.level, x: p.pos[0], z: p.pos[2], yaw: g.rotation.y, bounds })
+        }
+        continue
       }
       const w = this.lv.walls.find((x) => x.id === p.wall)
       if (!w) continue
@@ -803,6 +811,7 @@ export class ArtSystem {
   onLevelChange(): void { this.drawGuides() }
   dispose(): void {
     this.disposed = true; this.onChange = null; this.onModel = null
+    this.walker.obstacles = []
     this.release(this.group); this.release(this.guideLines)
     if (this.ghost) this.release(this.ghost)
     if (this.handMesh) this.release(this.handMesh)
