@@ -272,13 +272,13 @@ function bridgeFragments(o: Extract<LevelObject, { kind: 'slab' }>, start: numbe
   const ny = Math.ceil((b[1] - a[1]) / cell), nz = Math.ceil((b[2] - a[2]) / cell)
   const dy = (b[1] - a[1]) / ny, dz = (b[2] - a[2]) / nz
   let seed = Math.round(a[1] * 1234 + a[2] * 5678)
-  // Match the later ~60-chunk flow without changing the worn edge's random sequence.
+  // Thin the starting debris without changing the worn edge's random sequence.
   let densitySeed = seed ^ 0x6a09e667
   const random = () => { seed = (Math.imul(seed, 1664525) + 1013904223) >>> 0; return seed / 4294967296 }
   const keepLoose = () => { densitySeed = (Math.imul(densitySeed, 1664525) + 1013904223) >>> 0; return densitySeed / 4294967296 < .38 }
   const mesh = new THREE.InstancedMesh(new THREE.BoxGeometry(1, 1, 1), mat(o.material ?? 'concrete'), ny * nz * layers)
   mesh.name = `${o.name} fragments`
-  mesh.userData.bridgeLoose = new Set<number>()
+  mesh.userData.bridgeLoose = new Map<number, { origin: THREE.Vector3; progress: number }>()
   const piece = new THREE.Object3D(), tint = new THREE.Color()
   let count = 0
   for (let y = 0; y < ny; y++) for (let z = 0; z < nz; z++) {
@@ -295,7 +295,10 @@ function bridgeFragments(o: Extract<LevelObject, { kind: 'slab' }>, start: numbe
       piece.rotation.set((random() - 0.5) * loose, (random() - 0.5) * loose, (random() - 0.5) * loose)
       tint.setScalar(loose ? 0.78 + random() * 0.22 : 1)
       if (loose && !keepLoose()) continue
-      if (loose) mesh.userData.bridgeLoose.add(count)
+      if (loose) mesh.userData.bridgeLoose.set(count, {
+        origin: new THREE.Vector3(start + (edge + 1) * cell, a[1] + (y + .5) * dy, a[2] + (z + .5) * dz),
+        progress: loose,
+      })
       piece.updateMatrix(); mesh.setMatrixAt(count, piece.matrix)
       mesh.setColorAt(count++, tint)
     }

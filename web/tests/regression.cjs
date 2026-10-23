@@ -110,7 +110,7 @@ test('bridge keeps its attachment and deterministic starting fragments retain th
   assert.equal(room.getObjectByName('bridge end'), undefined, 'no solid end cap behind the fragments');
   const fragments = built.bridges.map(b => b.fragments);
   assert.equal(fragments.length, 4);
-  const matrix = new THREE.Matrix4(), p = new THREE.Vector3(), q = new THREE.Quaternion(), s = new THREE.Vector3();
+  const matrix = new THREE.Matrix4();
   for (const mesh of fragments) {
     assert.ok(mesh.isInstancedMesh && mesh.count > 0 && mesh.count < 500);
     assert.deepEqual(mesh.instanceMatrix.array, again.getObjectByName(mesh.name).instanceMatrix.array);
@@ -118,9 +118,9 @@ test('bridge keeps its attachment and deterministic starting fragments retain th
     assert.deepEqual(mesh.userData.bridgeLoose, again.getObjectByName(mesh.name).userData.bridgeLoose);
     const name = mesh.name.replace(' fragments', ''), source = level.objects.find(o => o.name === name);
     const axis = /floor|roof/.test(name) ? 1 : 2, thickness = source.box[1][axis] - source.box[0][axis];
-    for (let i = 0; i < mesh.count; i++) {
-      mesh.getMatrixAt(i, matrix); assert.ok(matrix.elements.every(Number.isFinite)); matrix.decompose(p, q, s);
-      assert.ok(Math.abs(s.getComponent(axis) - thickness) < 1e-6, 'attached and loose starting fragments retain the wall, floor or roof thickness');
+    for (const cell of built.bridges.find(b => b.fragments === mesh).cells.filter(c => c.mesh === mesh)) {
+      mesh.getMatrixAt(cell.index, matrix); assert.ok(matrix.elements.every(Number.isFinite));
+      assert.ok(Math.abs(cell.size.getComponent(axis) - thickness) < 1e-6, 'attached and loose source fragments retain the wall, floor or roof thickness');
     }
     const base = new THREE.Box3().setFromObject(room.getObjectByName(name));
     assert.ok(Math.abs(base.min.x - source.box[0][0]) < 1e-6, 'bridge stays attached to the building');
@@ -128,6 +128,64 @@ test('bridge keeps its attachment and deterministic starting fragments retain th
   }
   for (const b of [...built.bridges, ...rebuilt.bridges]) b.dispose();
   for (const g of [room, again]) g.traverse(o => { if (o.isMesh) o.geometry.dispose(); });
+});
+
+test('the opening cloud already has the age, splits and fading of material shed from the worn edge', () => {
+  const built = buildLevel(level), matrix = new THREE.Matrix4();
+  let parents = 0, split = 0, fading = 0;
+  for (const bridge of built.bridges) {
+    const source = level.objects.find(o => o.name === bridge.shell.name), [a, b] = source.box;
+    let childIndex = 0;
+    for (const cell of bridge.cells) {
+      const loose = cell.mesh === bridge.fragments && bridge.fragments.userData.bridgeLoose.get(cell.index);
+      const age = Math.max(0, -cell.release);
+      if (!loose) {
+        assert.ok(cell.release > 0, 'attached material waits for its own scheduled departure');
+        cell.mesh.getMatrixAt(cell.index, matrix);
+        assert.ok(new THREE.Vector3().setFromMatrixPosition(matrix).distanceTo(cell.position) < 1e-6, 'attached geometry is unchanged at entry');
+        assert.ok(new THREE.Vector3().setFromMatrixScale(matrix).distanceTo(cell.size) < 1e-6);
+        continue;
+      }
+      assert.ok(loose.progress > 0 && loose.progress <= 1);
+      assert.ok(Math.abs(age / cell.end - loose.progress) < 1e-12, 'opening age represents its existing journey');
+      assert.ok(cell.position.distanceTo(loose.origin) < 1e-12);
+      loose.origin.toArray().forEach((v, axis) => assert.ok(v >= a[axis] - 1e-6 && v <= b[axis] + 1e-6, 'every source point lies in its original bridge surface'));
+      assert.ok(loose.origin.x >= b[0] - 1.35, 'opening fragments come from the worn edge');
+      if (/wall/.test(bridge.shell.name)) assert.ok(cell.velocity.z * (loose.origin.z < .06 ? -1 : 1) > 0, 'wall starters drift outward from their source side');
+      cell.mesh.getMatrixAt(cell.index, matrix);
+      if (age >= cell.end) { assert.equal(matrix.determinant(), 0); continue; }
+      const expectedCentre = cell.position.clone().addScaledVector(cell.velocity, age - 4 * (1 - Math.exp(-age / 4)));
+      if (age < cell.split) {
+        parents++;
+        assert.ok(new THREE.Vector3().setFromMatrixPosition(matrix).distanceTo(expectedCentre) < 1e-6, 'existing parent displacement matches its age');
+      } else {
+        split++;
+        assert.equal(matrix.determinant(), 0, 'an aged parent is replaced by its already separated children');
+        const centre = new THREE.Vector3();
+        for (let i = 0; i < 8; i++) {
+          bridge.chips.getMatrixAt(childIndex, matrix); centre.add(new THREE.Vector3().setFromMatrixPosition(matrix));
+          const alpha = bridge.chips.geometry.getAttribute('bridgeFade').getX(childIndex++);
+          if (age > cell.fadeAt) { assert.ok(alpha < 1); fading++; } else assert.equal(alpha, 1);
+        }
+        assert.ok(centre.divideScalar(8).y >= expectedCentre.y, 'split children have continued their upward drift');
+      }
+    }
+    assert.equal(bridge.chips.count, childIndex);
+    const meshes = [bridge.shell, bridge.fragments, bridge.chips];
+    const opening = meshes.map(m => ({ count: m.count, matrix: m.instanceMatrix.array.slice() }));
+    const openingFade = bridge.chips.geometry.getAttribute('bridgeFade').array.slice();
+    bridge.update(1, true);
+    meshes.forEach((m, i) => { assert.equal(m.count, opening[i].count); assert.deepEqual(m.instanceMatrix.array, opening[i].matrix); });
+    assert.deepEqual(bridge.chips.geometry.getAttribute('bridgeFade').array, openingFade, 'reduced motion also freezes the opening fade');
+    bridge.update(.001);
+    meshes.forEach((m, i) => {
+      assert.equal(m.count, opening[i].count);
+      assert.ok(m.instanceMatrix.array.every((v, j) => Math.abs(v - opening[i].matrix[j]) < .001), 'the first frame continues the opening cloud without a jump');
+    });
+    assert.ok(bridge.chips.geometry.getAttribute('bridgeFade').array.every((v, i) => Math.abs(v - openingFade[i]) < .001), 'opening opacity also continues smoothly');
+    bridge.dispose();
+  }
+  assert.ok(parents > 0 && split > 0 && fading > 0, 'the opening contains whole chunks, split fragments and distant fading fragments');
 });
 
 test('voxel bridge removes its actual fitted walls, rises through splitting, and finishes empty', () => {
@@ -146,7 +204,7 @@ test('voxel bridge removes its actual fitted walls, rises through splitting, and
     for (let i = 0; i < bridge.shell.count; i++) volume += read(bridge.shell, i).volume;
     assert.ok(Math.abs(volume - (expectedMax[0] - a[0]) * (b[1] - a[1]) * (b[2] - a[2])) < 1e-6, 'fitted cells fill exactly the original slab');
     assert.ok(built.group.children.filter(m => m.name === bridge.shell.name).every(m => m.isInstancedMesh), 'no intact slab remains behind the moving cells');
-    assert.equal(bridge.chips.count, 0);
+    assert.ok(bridge.chips.count > 0, 'the opening cloud has already split');
     assert.equal(bridge.shell.material, bridge.fragments.material);
     assert.notEqual(bridge.chips.material, bridge.shell.material, 'fade must not change shared room materials');
     assert.equal(bridge.shell.material.opacity, 1);
@@ -219,15 +277,15 @@ test('voxel splits preserve volume and position; reduced motion freezes and owne
   const volume = matrices => matrices.reduce((n, m) => n + Math.abs(m.determinant()), 0);
   const centre = matrices => matrices.reduce((v, m) => v.add(new THREE.Vector3().setFromMatrixPosition(m)), new THREE.Vector3()).divideScalar(matrices.length);
   for (const bridge of built.bridges) {
-    const cell = bridge.cells.find(c => c.mesh === bridge.fragments && c.release === 0);
-    const earlier = pieces(bridge, cell, cell.split - .0001), later = pieces(bridge, cell, cell.split + .0001);
+    const cell = bridge.cells.find(c => c.mesh === bridge.fragments && c.release < 0 && -c.release < c.split);
+    const earlier = pieces(bridge, cell, cell.release + cell.split - .0001), later = pieces(bridge, cell, cell.release + cell.split + .0001);
     assert.equal(later.length, 8);
     assert.ok(Math.abs(volume(earlier) - volume(later)) < 1e-7, 'splitting conserves the parent material');
     assert.ok(centre(earlier).distanceTo(centre(later)) < .0001, 'children start inside their parent without teleporting');
     const inverse = earlier[0].clone().invert(), bounds = new THREE.Box3();
     for (const m of later) for (const x of [-.5, .5]) for (const y of [-.5, .5]) for (const z of [-.5, .5]) bounds.expandByPoint(new THREE.Vector3(x, y, z).applyMatrix4(m).applyMatrix4(inverse));
     assert.ok(bounds.min.distanceTo(new THREE.Vector3(-.5, -.5, -.5)) < .001 && bounds.max.distanceTo(new THREE.Vector3(.5, .5, .5)) < .001, 'eight children initially tile the original rectangular chunk');
-    const distant = pieces(bridge, cell, cell.fadeAt - .001);
+    const distant = pieces(bridge, cell, cell.release + cell.fadeAt - .001);
     assert.ok(Math.abs(volume(distant) - volume(earlier)) < 1e-7, 'chunks retain their size until the distant fade starts');
     const freeze = [bridge.shell, bridge.fragments, bridge.chips].map(m => ({ count: m.count, matrix: m.instanceMatrix.array.slice() }));
     bridge.update(bridge.duration, true);

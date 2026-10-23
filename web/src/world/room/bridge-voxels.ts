@@ -51,12 +51,17 @@ export class VoxelBridge {
         const position = new THREE.Vector3(), rotation = new THREE.Quaternion(), size = new THREE.Vector3(), tint = new THREE.Color(1, 1, 1)
         mesh.getMatrixAt(i, matrix); matrix.decompose(position, rotation, size)
         if (mesh.instanceColor) mesh.getColorAt(i, tint)
-        const loose = mesh === fragments && fragments.userData.bridgeLoose.has(i)
-        const release = loose ? 0 : Math.max(2, 10 + (4.05 - position.x) * 100 + (random() - .5) * 42)
+        const loose = mesh === fragments ? fragments.userData.bridgeLoose.get(i) : undefined
+        if (loose) { position.copy(loose.origin); rotation.identity() }
+        let release = loose ? 0 : Math.max(2, 10 + (4.05 - position.x) * 100 + (random() - .5) * 42)
         const split = 38 + random() * 42
         const velocity = new THREE.Vector3(.008 + random() * .014, .022 + random() * .022, (position.z < .06 ? -1 : 1) * (.003 + random() * .008))
         const fadeAt = Math.max(split + 32, 3.2 / velocity.y + 4)
         const scatter = Array.from({ length: 8 }, () => new THREE.Vector3((random() - .5) * .022, .002 + random() * .016, (random() - .5) * .022))
+        if (loose) {
+          // The opening cloud is already partway through the same journey as newly shed material.
+          release = -loose.progress * (fadeAt + 48)
+        }
         this.cells.push({ mesh, index: i, position, rotation, size, tint, release, split, fadeAt, end: fadeAt + 48,
           velocity, scatter, spin: new THREE.Euler((random() - .5) * .006, (random() - .5) * .009, (random() - .5) * .006) })
       }
@@ -78,6 +83,7 @@ export class VoxelBridge {
     this.chips.name = `${name} split fragments`; this.chips.frustumCulled = false; this.chips.count = 0
     this.chips.instanceMatrix.setUsage(THREE.DynamicDrawUsage)
     this.chips.setColorAt(0, this.tint); this.chips.instanceColor!.setUsage(THREE.DynamicDrawUsage)
+    this.update(0)
   }
 
   update(time: number, reduceMotion = false): void {
