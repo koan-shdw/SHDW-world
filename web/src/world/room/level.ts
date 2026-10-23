@@ -2,6 +2,7 @@
 // Walls with openings (windows with grids, doors with leaves and runtime state, panels), floors, ceilings, stairs with
 // checker treads / plywood risers / blue stringers, ribs, lights, aircon, wall boxes, pipes, slabs. No scan.
 import * as THREE from 'three'
+import { VoxelBridge } from './bridge-voxels'
 
 export type Facing = '+x' | '-x' | '+z' | '-z'
 export type Dir = Facing
@@ -263,7 +264,7 @@ export interface DoorRuntime {
   id: string; wall: Wall; opening: Opening; open: boolean; t: number
   pivot: THREE.Object3D; type: DoorSpec['type']; slideDir: 1 | -1
 }
-export interface Built { group: THREE.Group; wire: THREE.Group; doors: DoorRuntime[]; lights: THREE.PointLight[] }
+export interface Built { group: THREE.Group; wire: THREE.Group; doors: DoorRuntime[]; lights: THREE.PointLight[]; bridges: VoxelBridge[] }
 
 /** The bridge's outer shell breaks into a fixed trail of smaller cubes toward +x. */
 function bridgeFragments(o: Extract<LevelObject, { kind: 'slab' }>, start: number): THREE.InstancedMesh {
@@ -302,6 +303,7 @@ export function buildLevel(lv: Level): Built {
   const wireMat = new THREE.LineBasicMaterial({ color: 0x00ff9f, transparent: true, opacity: 0.6 })
   const doors: DoorRuntime[] = []
   const lights: THREE.PointLight[] = []
+  const bridges: VoxelBridge[] = []
   const wallById = new Map(lv.walls.map((w) => [w.id, w]))
   const addWire = (g: THREE.BufferGeometry, m: THREE.Mesh) => { const l = new THREE.LineSegments(new THREE.EdgesGeometry(g, 30), wireMat); l.position.copy(m.position); l.rotation.copy(m.rotation); wire.add(l) }
 
@@ -557,7 +559,11 @@ export function buildLevel(lv: Level): Built {
     } else if (o.kind === 'slab') {
       if (o.name === 'bridge end') continue
       const p0 = o.box[0], p1 = [...o.box[1]]
-      if (o.name?.startsWith('bridge ')) { p1[0] -= 1.35; group.add(bridgeFragments(o, p1[0])) }
+      if (o.name?.startsWith('bridge ')) {
+        const bridge = new VoxelBridge(o.name, o.box, bridgeFragments(o, p1[0] - 1.35))
+        bridges.push(bridge); group.add(bridge.shell, bridge.fragments, bridge.chips)
+        continue
+      }
       const m = new THREE.Mesh(new THREE.BoxGeometry(p1[0] - p0[0], p1[1] - p0[1], p1[2] - p0[2]), mat(o.material ?? 'concrete'))
       m.name = o.name ?? ''
       m.position.set((p0[0] + p1[0]) / 2, (p0[1] + p1[1]) / 2, (p0[2] + p1[2]) / 2); group.add(m)
@@ -618,7 +624,7 @@ export function buildLevel(lv: Level): Built {
       }
     }
   }
-  return { group, wire, doors, lights }
+  return { group, wire, doors, lights, bridges }
 }
 
 /** animate door leaves toward their open state; slide = translate along the wall, swing = rotate about the hinge */
