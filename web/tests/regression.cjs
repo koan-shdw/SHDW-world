@@ -7,8 +7,8 @@ const path = require('node:path');
 const { DatabaseSync } = require('node:sqlite');
 const root = path.resolve(__dirname, '../..');
 const scratch = fs.mkdtempSync(path.join(os.tmpdir(), 'shdw-test-'));
-require('esbuild').buildSync({ stdin: { contents: `export {default as worker} from './worker/src/index.ts'; export {Store} from './web/src/world/store.ts'; export {ArtSystem} from './web/src/world/art/art.ts'; export {Input} from './web/src/world/input.ts'; export {Walker} from './web/src/world/walk.ts'; export {buildLevel, updateDoors} from './web/src/world/room/level.ts'; export {doorAt} from './web/src/world/doors.ts'; export {sheltered, Wind} from './web/src/world/wind.ts'; export {Void} from './web/src/world/looks/void.ts'; export {Plants} from './web/src/world/looks/plants.ts'; export {EdgesPass} from './web/src/world/looks/edges.ts'; export * as THREE from './web/node_modules/three/build/three.module.js';`, resolveDir: root, loader: 'ts' }, outfile: path.join(scratch, 'project.cjs'), bundle: true, platform: 'node', format: 'cjs', define: { 'import.meta.env.VITE_STORE': '"http://local.test"' }, logLevel: 'silent' });
-const { worker, Store, ArtSystem, Input, Walker, buildLevel, updateDoors, doorAt, sheltered, Wind, Void, Plants, EdgesPass, THREE } = require(path.join(scratch, 'project.cjs'));
+require('esbuild').buildSync({ stdin: { contents: `export {default as worker} from './worker/src/index.ts'; export {Store} from './web/src/world/store.ts'; export {ArtSystem} from './web/src/world/art/art.ts'; export {Input} from './web/src/world/input.ts'; export {Walker} from './web/src/world/walk.ts'; export {buildLevel, updateDoors, mat} from './web/src/world/room/level.ts'; export {doorAt} from './web/src/world/doors.ts'; export {sheltered, Wind} from './web/src/world/wind.ts'; export {Void} from './web/src/world/looks/void.ts'; export {Plants} from './web/src/world/looks/plants.ts'; export {EdgesPass} from './web/src/world/looks/edges.ts'; export * as THREE from './web/node_modules/three/build/three.module.js';`, resolveDir: root, loader: 'ts' }, outfile: path.join(scratch, 'project.cjs'), bundle: true, platform: 'node', format: 'cjs', define: { 'import.meta.env.VITE_STORE': '"http://local.test"' }, logLevel: 'silent' });
+const { worker, Store, ArtSystem, Input, Walker, buildLevel, updateDoors, mat, doorAt, sheltered, Wind, Void, Plants, EdgesPass, THREE } = require(path.join(scratch, 'project.cjs'));
 after(() => fs.rmSync(scratch, { recursive: true, force: true }));
 const memory = new Map();
 global.localStorage = { getItem: k => memory.get(k) ?? null, setItem: (k, v) => memory.set(k, v), removeItem: k => memory.delete(k) };
@@ -104,29 +104,87 @@ test('lightning signals once per visible strike and never replays hidden or redu
   } finally { smoke.dispose(); }
 });
 
-test('bridge keeps its attachment and breaks into deterministic, shrinking cubes at the far end', () => {
-  const before = JSON.stringify(level), room = buildLevel(level).group, again = buildLevel(level).group;
-  assert.equal(JSON.stringify(level), before, 'rendering must not change collision or source data');
-  assert.equal(room.getObjectByName('bridge end'), undefined, 'no solid end cap behind the fragments');
-  const fragments = room.children.filter(m => m.name.endsWith(' fragments'));
-  assert.equal(fragments.length, 4);
-  const near = [], far = [], matrix = new THREE.Matrix4(), p = new THREE.Vector3(), q = new THREE.Quaternion(), s = new THREE.Vector3();
-  for (const mesh of fragments) {
-    assert.ok(mesh.isInstancedMesh && mesh.count > 0 && mesh.count < 500);
-    assert.deepEqual(mesh.instanceMatrix.array, again.getObjectByName(mesh.name).instanceMatrix.array);
-    for (let i = 0; i < mesh.count; i++) {
-      mesh.getMatrixAt(i, matrix); assert.ok(matrix.elements.every(Number.isFinite)); matrix.decompose(p, q, s);
-      if (p.x > 4.3) { assert.ok(Math.abs(s.x - s.y) < 1e-6 && Math.abs(s.x - s.z) < 1e-6); (p.x < 5.2 ? near : far).push(s.x); }
+test('bridge fragments are the actual corridor shell with no solid backing or interior emitter', () => {
+  const before = JSON.stringify(level), built = buildLevel(level), again = buildLevel(level);
+  const outward = { 'bridge floor': [0, -1, 0], 'bridge roof': [0, 1, 0], 'bridge wall a': [0, 0, -1], 'bridge wall b': [0, 0, 1] };
+  try {
+    assert.equal(built.bridges.length, 4);
+    assert.equal(built.group.getObjectByName('bridge end'), undefined);
+    assert.equal(built.group.children.filter(m => m.name.startsWith('bridge ')).length, 4, 'each slab is replaced once, without a hidden intact backing');
+    const point = new THREE.Vector3();
+    for (const mesh of built.bridges) {
+      const source = level.objects.find(o => o.name === mesh.name), [a, b] = source.box;
+      const bounds = new THREE.Box3(new THREE.Vector3(...a), new THREE.Vector3(...b)).expandByScalar(1e-6);
+      const expectedNormal = new THREE.Vector3(...outward[mesh.name]);
+      const position = mesh.geometry.getAttribute('position');
+      assert.ok(mesh.userData.bridgeDecay, 'moving shell is identified for exclusion from the static occlusion mesh');
+      assert.ok(position.count > 0 && position.array.every(Number.isFinite));
+      assert.deepEqual(position.array, again.group.getObjectByName(mesh.name).geometry.getAttribute('position').array);
+      for (let i = 0; i < position.count; i++) assert.ok(bounds.containsPoint(point.fromBufferAttribute(position, i)), 'every original shard lies in its actual wall, roof or floor');
+      assert.ok(mesh.patches.length > 10 && mesh.patches.length < 1000);
+      for (const p of mesh.patches) {
+        assert.ok(bounds.containsPoint(p.origin));
+        assert.ok(p.normal.distanceTo(expectedNormal) < 1e-6);
+        assert.ok(p.velocity.dot(expectedNormal) > 0, 'pieces leave the outer face rather than crossing the corridor interior');
+        assert.ok(Number.isFinite(p.release) && p.life > 0);
+      }
+      const height = mesh.name.includes('wall') ? b[1] - a[1] : b[2] - a[2];
+      const area = mesh.patches.reduce((total, p) => total + p.area, 0);
+      assert.ok(Math.abs(area - (b[0] - a[0]) * height) < 1e-5, 'patches tile the whole original surface before they detach');
+      assert.deepEqual(mesh.patches.map(p => p.release), again.group.getObjectByName(mesh.name).patches.map(p => p.release));
     }
-    const name = mesh.name.replace(' fragments', ''), source = level.objects.find(o => o.name === name);
-    const base = new THREE.Box3().setFromObject(room.getObjectByName(name));
-    assert.ok(Math.abs(base.min.x - source.box[0][0]) < 1e-6, 'bridge stays attached to the building');
-    assert.ok(base.max.x < source.box[1][0] - 1, 'the outer end is replaced, not covered with particles');
+    assert.equal(JSON.stringify(level), before, 'rendering leaves navigation and saved source geometry unchanged');
+  } finally {
+    for (const room of [built, again]) { room.bridges.forEach(m => m.dispose()); room.group.traverse(o => { if (o.isMesh && !o.userData.bridgeDecay) o.geometry.dispose(); }); }
   }
-  assert.ok(near.length > 10 && far.length > 10);
-  const mean = xs => xs.reduce((a, b) => a + b, 0) / xs.length;
-  assert.ok(mean(far) < mean(near) * 0.65, 'fragments shrink into the void');
-  for (const g of [room, again]) g.traverse(o => { if (o.isMesh) o.geometry.dispose(); });
+});
+
+test('bridge loss recedes toward the building over one playthrough and never recycles', () => {
+  const built = buildLevel(level), mean = values => values.reduce((a, b) => a + b, 0) / values.length;
+  try {
+    for (const mesh of built.bridges) {
+      const source = level.objects.find(o => o.name === mesh.name), [a, b] = source.box;
+      const root = mesh.patches.filter(p => p.origin.x < a[0] + (b[0] - a[0]) * 0.25);
+      const end = mesh.patches.filter(p => p.origin.x > a[0] + (b[0] - a[0]) * 0.75);
+      assert.ok(root.length > 0 && end.length > 0);
+      assert.ok(mean(root.map(p => p.release)) > mean(end.map(p => p.release)) + 180, 'the exposed end breaks before the attachment');
+      const standing = t => mesh.patches.filter(p => p.release > t).length;
+      assert.ok(standing(0) > 0 && standing(0) < mesh.patches.length, 'the first frame is already partly disintegrated');
+      assert.ok(standing(120) < standing(0) && standing(240) < standing(120) && standing(360) < standing(240));
+      assert.ok(mesh.finishedAt > 360 && mesh.finishedAt <= 480, 'the entire shell disappears slowly, within about eight minutes');
+      mesh.update(120); assert.equal(mesh.time.value, 120); assert.equal(mesh.visible, true);
+      mesh.update(480); assert.equal(mesh.visible, false);
+      mesh.update(3600); assert.equal(mesh.visible, false, 'the corridor stays gone for the rest of the session');
+      assert.ok(mesh.time.value >= mesh.finishedAt, 'time never wraps into another emission cycle');
+    }
+  } finally { built.bridges.forEach(m => m.dispose()); built.group.traverse(o => { if (o.isMesh && !o.userData.bridgeDecay) o.geometry.dispose(); }); }
+});
+
+test('bridge reduced motion freezes its current damage and shadows follow the same disappearing pieces', () => {
+  const built = buildLevel(level);
+  try {
+    for (const mesh of built.bridges) {
+      const shader = () => ({ uniforms: {}, vertexShader: '#include <common>\nvoid main() {\n#include <beginnormal_vertex>\n#include <begin_vertex>\n}', fragmentShader: '#include <common>\n#include <alphahash_fragment>' });
+      const visible = shader(), shadow = shader();
+      mesh.material.onBeforeCompile(visible); mesh.customDepthMaterial.onBeforeCompile(shadow);
+      assert.equal(visible.vertexShader, shadow.vertexShader, 'lightning shadows deform with the surface geometry');
+      assert.equal(visible.fragmentShader, shadow.fragmentShader, 'surface and shadow fragments disappear together');
+      assert.equal(visible.uniforms.uBridgeTime, shadow.uniforms.uBridgeTime);
+      assert.ok(mesh.material.alphaHash && mesh.customDepthMaterial.alphaHash);
+      assert.equal(mesh.material.transparent, false, 'remaining fragments still write the depth used by smoke');
+      mesh.update(120); assert.equal(visible.uniforms.uBridgeTime.value, 120);
+      mesh.update(240, true); assert.equal(visible.uniforms.uBridgeTime.value, 120); assert.equal(mesh.visible, true);
+      mesh.update(121); assert.equal(visible.uniforms.uBridgeTime.value, 121);
+      mesh.update(480); assert.equal(mesh.visible, false);
+      mesh.update(0, true); assert.equal(visible.uniforms.uBridgeTime.value, 480); assert.equal(mesh.visible, false, 'enabling reduced motion cannot rebuild an already vanished bridge');
+      let disposed = 0, sharedDisposed = 0;
+      const shared = mat(level.objects.find(o => o.name === mesh.name).material);
+      shared.addEventListener('dispose', () => sharedDisposed++);
+      const resources = [mesh.geometry, mesh.material, mesh.customDepthMaterial];
+      resources.forEach(resource => resource.addEventListener('dispose', () => disposed++));
+      mesh.dispose(); assert.equal(disposed, resources.length); assert.equal(sharedDisposed, 0);
+    }
+  } finally { built.group.traverse(o => { if (o.isMesh && !o.userData.bridgeDecay) o.geometry.dispose(); }); }
 });
 const note = { ...placed, id: 'note-one', art: 'note', note: { text: 'PRIVATE TEST NOTE', who: 'YOZO' } };
 function environment() {
