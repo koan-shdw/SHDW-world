@@ -17,7 +17,7 @@
 
 {#if !ui.chosen && ui.room}
   <section class="exhibition-intro" aria-label="CULT exhibition">
-    <header><span class="world">SHDW.world</span><button class="sound-toggle" onclick={sound} aria-label={ui.play?.wind ? 'Mute wind' : 'Enable wind'} aria-pressed={ui.play?.wind ?? true}><span class:audible={ui.play?.wind} class="sound-dot"></span>Sound {ui.play?.wind ? 'on' : 'off'}</button></header>
+    <header><span class="world">SHDW.world</span><button class="sound-toggle" onclick={sound} aria-label={ui.play?.wind ? 'Mute sound' : 'Enable sound'} aria-pressed={ui.play?.wind ?? true}><span class:audible={ui.play?.wind} class="sound-dot"></span>Sound {ui.play?.wind ? 'on' : 'off'}</button></header>
     <div class="invitation">
       <p class="eyebrow">SHDW.gallery presents</p>
       <h1><img src="{base}brand/logo.png" alt="CULT 2026" /></h1>

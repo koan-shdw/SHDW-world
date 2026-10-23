@@ -76,6 +76,6 @@ export class Looks {
     this.surface.set(s.surface)
   }
 
-  update(t: number, reduce = false): void { this.void.setQuality(this.r.quality); this.void.update(t, reduce); this.plants.update(reduce ? 0 : t); this.glass.update(reduce ? 0 : t, this.void.flash, this.void.flashAt) }
+  update(t: number, reduce = false): boolean { this.void.setQuality(this.r.quality); const struck = this.void.update(t, reduce); this.plants.update(reduce ? 0 : t); this.glass.update(reduce ? 0 : t, this.void.flash, this.void.flashAt); return struck }
   dispose(): void { this.off(); this.plants.dispose() }
 }

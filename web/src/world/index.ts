@@ -376,7 +376,7 @@ export async function startWorld(container: HTMLElement, base: string): Promise<
   // SHOW.md §4: every 10 s, send what waits and bring in what the other person did
   const tick = window.setInterval(async () => { if (!art.store) return; const d = await store.tick(); if (d && art.applyShow(d.items, d.deleted, d.art, d.artDeleted)) artSnapshot() }, TICK_MS)
   renderer.start((dt) => {
-    elapsed += dt; looks.update(elapsed, input.settings.reduceMotion)
+    elapsed += dt; const struck = looks.update(elapsed, input.settings.reduceMotion)
     // fixed step (GAME.md §1): the walker moves in 1/120 s steps, the camera blends between the last two
     input.pollPad(dt)
     acc += Math.min(dt, 0.1); let steps = 0
@@ -389,6 +389,7 @@ export async function startWorld(container: HTMLElement, base: string): Promise<
     if (art.held && !touch && art.preview.ok && input.takeClick()) input.onVerb?.('do', new MouseEvent('mousedown'))
     const s = walker.state
     wind.update(s.level, s.x, s.z, s.yaw)
+    if (struck) wind.thunder(looks.void.flashAt, camera.position)
     const locked = s.locked
     // the touch menu follows its work and closes when you walk away
     if (touch) {

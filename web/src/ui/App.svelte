@@ -51,7 +51,7 @@
 
 <img class="logo top" src="{base}brand/logo.png" alt="CULT 2026" hidden={!ui.chosen} />
 <button class="settings top" onclick={() => bus.emit('menu_open', {})} hidden={ui.menuShown || !ui.chosen}>settings</button>
-<button class="sound top" hidden={ui.menuShown || !ui.chosen} aria-label={ui.play?.wind ? 'Mute wind' : 'Enable wind'} aria-pressed={ui.play?.wind ?? true} onclick={() => { bus.emit('audio_unlock', {}); bus.emit('set_play', { patch: { wind: !ui.play?.wind } }) }}>sound {ui.play?.wind ? 'on' : 'off'}</button>
+<button class="sound top" hidden={ui.menuShown || !ui.chosen} aria-label={ui.play?.wind ? 'Mute sound' : 'Enable sound'} aria-pressed={ui.play?.wind ?? true} onclick={() => { bus.emit('audio_unlock', {}); bus.emit('set_play', { patch: { wind: !ui.play?.wind } }) }}>sound {ui.play?.wind ? 'on' : 'off'}</button>
 <Intro {base} />
 {#if ui.play?.touchControls && ui.room && ui.chosen}<TouchControls />{/if}
 

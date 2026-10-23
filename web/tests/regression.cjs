@@ -7,8 +7,8 @@ const path = require('node:path');
 const { DatabaseSync } = require('node:sqlite');
 const root = path.resolve(__dirname, '../..');
 const scratch = fs.mkdtempSync(path.join(os.tmpdir(), 'shdw-test-'));
-require('esbuild').buildSync({ stdin: { contents: `export {default as worker} from './worker/src/index.ts'; export {Store} from './web/src/world/store.ts'; export {ArtSystem} from './web/src/world/art/art.ts'; export {Input} from './web/src/world/input.ts'; export {Walker} from './web/src/world/walk.ts'; export {buildLevel, updateDoors} from './web/src/world/room/level.ts'; export {doorAt} from './web/src/world/doors.ts'; export {sheltered} from './web/src/world/wind.ts'; export {Void} from './web/src/world/looks/void.ts'; export {Plants} from './web/src/world/looks/plants.ts'; export {EdgesPass} from './web/src/world/looks/edges.ts'; export * as THREE from './web/node_modules/three/build/three.module.js';`, resolveDir: root, loader: 'ts' }, outfile: path.join(scratch, 'project.cjs'), bundle: true, platform: 'node', format: 'cjs', define: { 'import.meta.env.VITE_STORE': '"http://local.test"' }, logLevel: 'silent' });
-const { worker, Store, ArtSystem, Input, Walker, buildLevel, updateDoors, doorAt, sheltered, Void, Plants, EdgesPass, THREE } = require(path.join(scratch, 'project.cjs'));
+require('esbuild').buildSync({ stdin: { contents: `export {default as worker} from './worker/src/index.ts'; export {Store} from './web/src/world/store.ts'; export {ArtSystem} from './web/src/world/art/art.ts'; export {Input} from './web/src/world/input.ts'; export {Walker} from './web/src/world/walk.ts'; export {buildLevel, updateDoors} from './web/src/world/room/level.ts'; export {doorAt} from './web/src/world/doors.ts'; export {sheltered, Wind} from './web/src/world/wind.ts'; export {Void} from './web/src/world/looks/void.ts'; export {Plants} from './web/src/world/looks/plants.ts'; export {EdgesPass} from './web/src/world/looks/edges.ts'; export * as THREE from './web/node_modules/three/build/three.module.js';`, resolveDir: root, loader: 'ts' }, outfile: path.join(scratch, 'project.cjs'), bundle: true, platform: 'node', format: 'cjs', define: { 'import.meta.env.VITE_STORE': '"http://local.test"' }, logLevel: 'silent' });
+const { worker, Store, ArtSystem, Input, Walker, buildLevel, updateDoors, doorAt, sheltered, Wind, Void, Plants, EdgesPass, THREE } = require(path.join(scratch, 'project.cjs'));
 after(() => fs.rmSync(scratch, { recursive: true, force: true }));
 const memory = new Map();
 global.localStorage = { getItem: k => memory.get(k) ?? null, setItem: (k, v) => memory.set(k, v), removeItem: k => memory.delete(k) };
@@ -81,6 +81,27 @@ test('volumetric smoke retains surface depth, scales quality, and respects reduc
   for (const resource of [fog.target, fog.material.uniforms.volume.value, fog.material, composite.material]) resource.addEventListener('dispose', () => disposed++);
   smoke.dispose(); assert.equal(disposed, 4);
   edges.dispose(); read.dispose(); write.dispose(); wall.geometry.dispose(); wall.material.dispose();
+});
+
+test('lightning signals once per visible strike and never replays hidden or reduced-motion strikes', () => {
+  const smoke = new Void(new THREE.Group(), new THREE.PerspectiveCamera());
+  try {
+    assert.equal(smoke.update(4.9), false);
+    assert.equal(smoke.update(5), true, 'one thunder cue when the visible strike starts');
+    assert.equal(smoke.update(5.2), false);
+    assert.ok(smoke.flash > 0);
+    assert.equal(smoke.update(5.4), false, 'bright frames must not schedule extra thunder');
+    assert.equal(smoke.update(7), false);
+    smoke.set(false);
+    assert.equal(smoke.update(30), false, 'hidden lightning is silent');
+    smoke.set(true);
+    assert.equal(smoke.update(30.2), false, 'showing an already-started strike does not replay its cue');
+    assert.equal(smoke.update(32), false);
+    assert.equal(smoke.update(60, true), false, 'reduced motion suppresses lightning and its cue');
+    assert.equal(smoke.flash, 0);
+    assert.equal(smoke.update(61), true, 'normal motion starts a fresh visible strike');
+    assert.equal(smoke.update(61.2), false);
+  } finally { smoke.dispose(); }
 });
 
 test('bridge keeps its attachment and breaks into deterministic, shrinking cubes at the far end', () => {
@@ -355,6 +376,32 @@ test('free mouse consumes door clicks before pointer lock; wind settings survive
   input.setPlay({wind:false,windVolume:37});
   const restored = new Input({addEventListener(){}}); assert.equal(restored.settings.wind, false); assert.equal(restored.settings.windVolume, 37);
   input.dispose(); restored.dispose(); memory.delete('shdw-world-play');
+});
+
+test('thunder waits for entry, respects sound and visibility, and releases its lifetime', () => {
+  const oldDocument = document, oldAudioContext = global.AudioContext, listeners = new Map();
+  global.document = { hidden: false, addEventListener: (name, fn, options) => listeners.set(name, { fn, signal: options.signal }) };
+  global.AudioContext = class { constructor() { throw Error('controller test must not create a real audio graph'); } };
+  const settings = { wind: true, windVolume: 80 }, wind = new Wind(level, settings), cues = [];
+  let cancelled = 0, disposed = 0, closed = 0;
+  wind.sound = { update() {}, thunder: (...args) => cues.push(args), cancelThunder: () => cancelled++, dispose: () => disposed++ };
+  wind.context = { state: 'running', currentTime: 12, suspend() { this.state = 'suspended'; return Promise.resolve(); }, resume() { this.state = 'running'; return Promise.resolve(); }, close() { closed++; return Promise.resolve(); } };
+  const at = { x: 3, y: 4, z: 0 }, listener = { x: 0, y: 0, z: 0 };
+  try {
+    wind.thunder(at, listener); assert.equal(cues.length, 0, 'intro remains silent even after audio unlock');
+    wind.enter(); wind.thunder(at, listener); assert.deepEqual(cues, [[12, 5, 0.6]]);
+    wind.set({ ...settings, wind: false }); wind.thunder(at, listener);
+    assert.equal(cancelled, 1); assert.equal(cues.length, 1);
+    wind.set({ ...settings, windVolume: 0 }); wind.thunder(at, listener);
+    assert.equal(cancelled, 2); assert.equal(cues.length, 1);
+    wind.set(settings); document.hidden = true; listeners.get('visibilitychange').fn(); wind.thunder(at, listener);
+    assert.equal(cancelled, 3); assert.equal(wind.context.state, 'suspended'); assert.equal(cues.length, 1);
+    document.hidden = false; wind.thunder(at, listener); assert.equal(cues.length, 1, 'suspended audio cannot queue a delayed strike');
+    listeners.get('visibilitychange').fn(); assert.equal(wind.context.state, 'running'); assert.equal(cues.length, 1, 'returning does not replay missed strikes');
+    wind.thunder(at, listener); assert.equal(cues.length, 2, 'only a fresh strike sounds');
+    wind.dispose(); assert.equal(disposed, 1); assert.equal(closed, 1);
+    assert.ok([...listeners.values()].every(({ signal }) => signal.aborted));
+  } finally { global.document = oldDocument; if (oldAudioContext === undefined) delete global.AudioContext; else global.AudioContext = oldAudioContext; }
 });
 
 test('wind is sheltered by the gallery and stairs while the courtyard stays exposed', () => {

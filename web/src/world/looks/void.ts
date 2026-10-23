@@ -160,8 +160,10 @@ export class Void extends Pass {
     this.target.setSize(width, height)
     this.composite.uniforms.smokeSize.value.set(width, height)
   }
-  update(t: number, reduce = false): void {
+  update(t: number, reduce = false): boolean {
+    let struck = false
     if (!reduce && t >= this.nextStrike && this.strikeT < 0) {
+      struck = this.enabled
       this.strikeT = t; this.strikeLen = 0.8 + Math.random() * 0.6
       this.flashAt.set(120 + Math.random() * 180, 70 + Math.random() * 100, -160 + Math.random() * 260)
       this.light.position.copy(this.flashAt)
@@ -175,6 +177,7 @@ export class Void extends Pass {
     this.material.uniforms.lightDirection.value.copy(this.flashAt).sub(this.light.target.position).normalize()
     this.light.intensity = 0.8 + this.flash * 3.2
     if (!this.enabled) this.flash = 0
+    return struck
   }
   set(on: boolean): void { this.enabled = on; this.group.visible = on; if (!on) this.flash = 0 }
   render(renderer: THREE.WebGLRenderer, write: THREE.WebGLRenderTarget, read: THREE.WebGLRenderTarget): void {

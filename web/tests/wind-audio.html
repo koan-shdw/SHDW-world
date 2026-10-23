@@ -1,25 +1,32 @@
-<!doctype html><html lang="en"><meta charset="utf-8"><title>Wind audio check</title>
+<!doctype html><html lang="en"><meta charset="utf-8"><title>Weather audio check</title>
 <style>body{background:#111820;color:#e5e9ec;font:16px system-ui;padding:30px}button,a{color:inherit;padding:12px}pre{white-space:pre-wrap}audio{display:block;margin:20px 0}</style>
-<h1>Wind audio check</h1><p>Eight seconds outdoors, eight indoors, six outdoors, then mute.</p><button id="render">Render and verify</button><pre id="result">Ready</pre><audio id="preview" controls></audio><a id="download" hidden download="wind-preview.wav">Download preview</a>
+<h1>Weather audio check</h1><p>Eight seconds outdoors, eight indoors, six outdoors, then mute. Lightning at 2 seconds; thunder arrives 2.4 seconds later.</p><button id="render">Render and verify</button><pre id="result">Ready</pre><audio id="preview" controls></audio><a id="download" hidden download="weather-preview.wav">Download preview</a>
 <script type="module">
 import { createWind } from '/src/world/wind.ts';
 document.querySelector('#render').onclick = async () => {
   const result = document.querySelector('#result'); result.textContent = 'Rendering…';
   try {
-    const context = new OfflineAudioContext(2, 24000 * 24, 24000), wind = createWind(context);
-    for(let t = 0; t < 24; t += .1) wind.update(t, t >= 8 && t < 16 ? 1 : 0, t >= 22 ? 0 : 100, .2);
-    const buffer = await context.startRendering(), channels = [buffer.getChannelData(0), buffer.getChannelData(1)];
-    const rms = (start,end) => { let energy = 0, n = 0; for(const c of channels) for(let i = start * 24000; i < end * 24000; i++){energy += c[i] ** 2; n++} return Math.sqrt(energy/n) };
-    let peak = 0; for(const c of channels) for(const x of c){if(!Number.isFinite(x)) throw Error('Non-finite output'); peak = Math.max(peak,Math.abs(x))}
-    const outside = rms(4,7), inside = rms(12,15), muted = rms(23,24);
-    if(peak >= .99 || outside < .025 || inside >= outside / 2.5 || muted > .0001) throw Error(JSON.stringify({peak,outside,inside,muted}));
-    result.textContent = JSON.stringify({status:'PASS',peak,outdoorRms:outside,indoorRms:inside,indoorReductionDb:20*Math.log10(outside/inside),mutedRms:muted},null,2);
+    const render = async (storm = false, indoors = false, cancel = false) => {
+      const context = new OfflineAudioContext(2, 24000 * 24, 24000), wind = createWind(context);
+      for(let t = 0; t < 24; t += .1) wind.update(t, indoors || (t >= 8 && t < 16) ? 1 : 0, t >= 22 ? 0 : 100, .2);
+      if(storm) { wind.thunder(2, 343, .5); wind.thunder(22, 0, -.5); }
+      if(cancel) wind.cancelThunder();
+      const buffer = await context.startRendering(); wind.dispose(); return buffer;
+    };
+    const baseline = await render(), buffer = await render(true), sheltered = await render(true, true), quiet = await render(false, true), cancelled = await render(true, false, true);
+    const rms = (b,start,end,reference) => { let energy = 0, n = 0; for(let ch=0;ch<2;ch++){ const c=b.getChannelData(ch), r=reference?.getChannelData(ch); for(let i=Math.ceil(start*24000);i<end*24000;i++){energy += (c[i] - (r?.[i] ?? 0)) ** 2; n++}} return Math.sqrt(energy/n) };
+    let peak = 0; for(const b of [baseline,buffer,sheltered,cancelled]) for(let ch=0;ch<2;ch++) for(const x of b.getChannelData(ch)){if(!Number.isFinite(x)) throw Error('Non-finite output'); peak=Math.max(peak,Math.abs(x))}
+    const outside = rms(baseline,4,7), inside = rms(baseline,12,15), muted = rms(buffer,23,24);
+    const beforeThunder = rms(buffer,0,4.39,baseline), rumble = rms(buffer,5,7,baseline), indoorThunder = rms(sheltered,5,7,quiet), tail = rms(buffer,15,20,baseline), cancellation = rms(cancelled,0,24,baseline);
+    const metrics = {peak,outdoorRms:outside,indoorRms:inside,windReductionDb:20*Math.log10(.201634360272026/outside),mutedRms:muted,thunderDelaySeconds:2.4,beforeThunderRms:beforeThunder,thunderRms:rumble,indoorThunderRms:indoorThunder,finishedThunderRms:tail,cancelledThunderRms:cancellation};
+    if(peak >= .99 || outside < .015 || outside > .1 || inside >= outside / 2.5 || muted > .0001 || beforeThunder > .000001 || rumble < .01 || indoorThunder >= rumble / 2.5 || tail > .000001 || cancellation > .000001) throw Error(JSON.stringify(metrics));
+    result.textContent = JSON.stringify({status:'PASS',...metrics},null,2);
+    const channels = [buffer.getChannelData(0),buffer.getChannelData(1)];
     const frames = buffer.length, bytes = new ArrayBuffer(44+frames*4), view = new DataView(bytes);
     const str = (at,s) => [...s].forEach((c,i)=>view.setUint8(at+i,c.charCodeAt(0)));
     str(0,'RIFF'); view.setUint32(4,36+frames*4,true); str(8,'WAVE'); str(12,'fmt '); view.setUint32(16,16,true); view.setUint16(20,1,true); view.setUint16(22,2,true); view.setUint32(24,24000,true); view.setUint32(28,96000,true); view.setUint16(32,4,true); view.setUint16(34,16,true); str(36,'data'); view.setUint32(40,frames*4,true);
     for(let i=0;i<frames;i++) for(let c=0;c<2;c++) view.setInt16(44+(i*2+c)*2, Math.max(-1,Math.min(1,channels[c][i]))*32767,true);
     const url=URL.createObjectURL(new Blob([bytes],{type:'audio/wav'})); document.querySelector('#preview').src=url; const download=document.querySelector('#download'); download.href=url; download.hidden=false;
-    wind.dispose();
   } catch(error) { result.textContent = 'FAIL: '+error.message; }
 };
 </script></html>
