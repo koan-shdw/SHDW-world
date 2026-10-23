@@ -112,7 +112,8 @@ test('bridge keeps its attachment and breaks into deterministic, shrinking cubes
   assert.equal(fragments.length, 4);
   const near = [], far = [], matrix = new THREE.Matrix4(), p = new THREE.Vector3(), q = new THREE.Quaternion(), s = new THREE.Vector3();
   for (const mesh of fragments) {
-    assert.ok(mesh.isInstancedMesh && mesh.count > 0 && mesh.count < 500);
+    mesh.update(0, true); again.getObjectByName(mesh.name).update(0, true);
+    assert.ok(mesh.isInstancedMesh && mesh.count > 0 && mesh.count < 4000);
     assert.deepEqual(mesh.instanceMatrix.array, again.getObjectByName(mesh.name).instanceMatrix.array);
     for (let i = 0; i < mesh.count; i++) {
       mesh.getMatrixAt(i, matrix); assert.ok(matrix.elements.every(Number.isFinite)); matrix.decompose(p, q, s);
@@ -126,7 +127,84 @@ test('bridge keeps its attachment and breaks into deterministic, shrinking cubes
   assert.ok(near.length > 10 && far.length > 10);
   const mean = xs => xs.reduce((a, b) => a + b, 0) / xs.length;
   assert.ok(mean(far) < mean(near) * 0.65, 'fragments shrink into the void');
-  for (const g of [room, again]) g.traverse(o => { if (o.isMesh) o.geometry.dispose(); });
+  for (const g of [room, again]) g.traverse(o => { if (o.isMesh) { if (o.name.endsWith(' fragments')) o.dispose(); else o.geometry.dispose(); } });
+});
+
+test('bridge blocks drift apart, fade before recycling, and keep their attachment fixed', () => {
+  const before = JSON.stringify(level), { group, bridges } = buildLevel(level);
+  const matrix = new THREE.Matrix4(), position = new THREE.Vector3(), scale = new THREE.Vector3(), rotation = new THREE.Quaternion();
+  try {
+    assert.equal(bridges.length, 4);
+    for (const mesh of bridges) {
+      const f = mesh.fragments[0], count = mesh.count, fade = mesh.geometry.getAttribute('fragmentFade');
+      const attached = mesh.instanceMatrix.array.slice(0, f.index * 16);
+      const sample = (age, cycle = 1) => {
+        mesh.update((cycle + age - f.phase) * f.duration);
+        const points = [], sizes = [], center = new THREE.Vector3();
+        for (let c = 0; c < 8; c++) {
+          mesh.getMatrixAt(f.index + c, matrix); matrix.decompose(position, rotation, scale);
+          points.push(position.clone()); sizes.push(scale.x); center.add(position);
+        }
+        center.multiplyScalar(1 / 8);
+        return { center, radius: points[0].distanceTo(center), size: sizes[0], alpha: fade.getX(f.index),
+          matrices: mesh.instanceMatrix.array.slice(f.index * 16, (f.index + 8) * 16) };
+      };
+      const young = sample(0.1), split = sample(0.7);
+      assert.ok(split.center.x > young.center.x + 1, 'debris travels outward from the bridge');
+      assert.ok(split.radius > young.radius * 3, 'one block separates into eight chips');
+      assert.ok(split.size < young.size * 0.5, 'chips shrink as they separate');
+      assert.ok(young.alpha > 0.99 && split.alpha > 0 && split.alpha < young.alpha);
+      assert.ok(sample(0.9999).alpha < 0.00001, 'the departing block disappears before its pool slot resets');
+      assert.ok(sample(0.0001, 2).alpha < 0.00001, 'the next block starts invisible at the bridge');
+      const renewed = sample(0.1, 2);
+      assert.ok(young.matrices.every((v, i) => Math.abs(v - renewed.matrices[i]) < 1e-6), 'the same pool slot feeds the next cycle');
+      assert.equal(renewed.alpha, young.alpha);
+      for (const t of [0, 2, 19, 90, 3600]) {
+        mesh.update(t);
+        assert.equal(mesh.count, count, 'continuous disintegration never grows the particle pool');
+        assert.ok(mesh.instanceMatrix.array.every(Number.isFinite));
+        assert.ok(fade.array.every(v => v >= 0 && v <= 1));
+        assert.deepEqual(mesh.instanceMatrix.array.slice(0, attached.length), attached, 'attached edge cells stay solid');
+        for (let i = 0; i < mesh.count; i++) {
+          mesh.getMatrixAt(i, matrix); position.setFromMatrixPosition(matrix);
+          assert.ok(mesh.boundingBox.containsPoint(position), 'the animated trail remains inside its culling bounds');
+        }
+      }
+    }
+    assert.equal(JSON.stringify(level), before, 'animation never changes walkable geometry or source data');
+  } finally {
+    bridges.forEach(mesh => mesh.dispose()); group.traverse(o => { if (o.isMesh && !bridges.includes(o)) o.geometry.dispose(); });
+  }
+});
+
+test('bridge reduced motion restores the static trail and fading shadows share the visible silhouette', () => {
+  const { group, bridges } = buildLevel(level);
+  try {
+    for (const mesh of bridges) {
+      const still = mesh.instanceMatrix.array.slice(), fade = mesh.geometry.getAttribute('fragmentFade');
+      mesh.update(7); assert.notDeepEqual(mesh.instanceMatrix.array, still);
+      mesh.update(7, true); assert.deepEqual(mesh.instanceMatrix.array, still);
+      assert.ok(fade.array.every(v => v === 1));
+      const version = mesh.instanceMatrix.version;
+      mesh.update(99, true); assert.deepEqual(mesh.instanceMatrix.array, still);
+      assert.equal(mesh.instanceMatrix.version, version, 'stationary fragments do not upload every frame');
+      mesh.update(99); assert.notDeepEqual(mesh.instanceMatrix.array, still);
+      assert.ok(mesh.material.alphaHash && mesh.customDepthMaterial.alphaHash);
+      assert.equal(mesh.material.transparent, false, 'fading fragments retain scene depth for the fog pass');
+      const shader = () => ({ vertexShader: '#include <common>\n#include <begin_vertex>', fragmentShader: '#include <common>\n#include <alphahash_fragment>' });
+      const visible = shader(), shadow = shader();
+      mesh.material.onBeforeCompile(visible); mesh.customDepthMaterial.onBeforeCompile(shadow);
+      assert.equal(visible.vertexShader, shadow.vertexShader);
+      assert.equal(visible.fragmentShader, shadow.fragmentShader);
+      assert.match(visible.fragmentShader, /diffuseColor\.a \*= vFragmentFade/);
+      let disposed = 0, sourceDisposed = 0;
+      const source = group.getObjectByName(mesh.name.replace(' fragments', '')).material;
+      source.addEventListener('dispose', () => sourceDisposed++);
+      const resources = [mesh, mesh.geometry, mesh.material, mesh.customDepthMaterial];
+      resources.forEach(r => r.addEventListener('dispose', () => disposed++));
+      mesh.dispose(); assert.equal(disposed, resources.length); assert.equal(sourceDisposed, 0, 'bridge cleanup preserves shared room materials');
+    }
+  } finally { group.traverse(o => { if (o.isMesh && !bridges.includes(o)) o.geometry.dispose(); }); }
 });
 const note = { ...placed, id: 'note-one', art: 'note', note: { text: 'PRIVATE TEST NOTE', who: 'YOZO' } };
 function environment() {

@@ -46,6 +46,7 @@ export async function startWorld(container: HTMLElement, base: string): Promise<
   let level: Level
   try { level = await loadLevel(`${DATA}level/level.json`) } catch (e) { bus.emit('world_failed', { message: (e as Error).message }); loader.dispose(); renderer.dispose(); return null }
   const built = buildLevel(level)
+  startupCleanup.push(() => built.bridges.forEach(bridge => bridge.dispose()))
   worldUVs(built.group)
   scene.add(built.group, built.wire)
   if (level.sky?.fallback) scene.background = new THREE.Color(level.sky.fallback)
@@ -377,6 +378,7 @@ export async function startWorld(container: HTMLElement, base: string): Promise<
   const tick = window.setInterval(async () => { if (!art.store) return; const d = await store.tick(); if (d && art.applyShow(d.items, d.deleted, d.art, d.artDeleted)) artSnapshot() }, TICK_MS)
   renderer.start((dt) => {
     elapsed += dt; const struck = looks.update(elapsed, input.settings.reduceMotion)
+    for (const bridge of built.bridges) bridge.update(elapsed, input.settings.reduceMotion)
     // fixed step (GAME.md §1): the walker moves in 1/120 s steps, the camera blends between the last two
     input.pollPad(dt)
     acc += Math.min(dt, 0.1); let steps = 0
@@ -464,6 +466,7 @@ export async function startWorld(container: HTMLElement, base: string): Promise<
     for (const off of offs) off()
     clearInterval(tick)
     input.onVerb = null; input.onLook = null; input.onPointerUse = null; input.onSlot = null; input.onArrow = null; input.onWheel = null
+    built.bridges.forEach(bridge => bridge.dispose())
     wind.dispose(); store.dispose(); input.dispose(); art.dispose(); looks.dispose(); roomGeo.dispose(); loader.dispose(); renderer.dispose()
   }
   bus.emit('world_ready', { hangWalls: level.walls.filter((w) => w.hang !== false).length, stairs: level.stairs.length, doors: built.doors.length, floors: level.levels.length, eyeCm: Math.round(level.eyeHeight * 100), walls: level.walls.length })
