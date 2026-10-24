@@ -6,7 +6,7 @@ import { bus, type Look, type TouchAction } from '../bus'
 import type { Placed } from './art/art'
 import { Renderer } from './renderer'
 import { Loader } from './loader'
-import { loadLevel, buildLevel, updateDoors, floorOf, setWireColor, meshAudit, skyLeakAudit, applyTextures, worldUVs, MAPS, type Level } from './room/level'
+import { loadLevel, buildLevel, updateDoors, floorOf, facingNormal, setWireColor, meshAudit, skyLeakAudit, applyTextures, worldUVs, MAPS, type Level } from './room/level'
 import { Walker } from './walk'
 import { Input, type Verb } from './input'
 import { Feel } from './feel'
@@ -15,9 +15,10 @@ import { ArtSystem } from './art/art'
 import { Anchors } from './anchors'
 import { Looks } from './looks'
 import { Intro } from './intro'
+import { GhostVisitors } from './ghost-visitors'
 import { Store, TICK_MS } from './store'
 import { Wind } from './wind'
-import { doorAt } from './doors'
+import { doorAt, doorOccupied } from './doors'
 import { ensureNoteFont } from './art/note'
 
 // three-mesh-bvh: the room's static geometry gets a BVH; raycasts against it are the accelerated kind
@@ -119,6 +120,8 @@ export async function startWorld(container: HTMLElement, base: string): Promise<
   walker.onLevelStep = () => feel.dip(walker.dip, 0.03)
   const art = new ArtSystem(level, scene, walker, camera, DATA, loader)
   startupCleanup.push(() => art.dispose())
+  const visitor = new GhostVisitors(level); scene.add(visitor.group)
+  startupCleanup.push(() => visitor.dispose())
   const store = new Store()                          // SHOW.md §4: the show's truth
   startupCleanup.push(() => store.dispose())
   ensureNoteFont()
@@ -148,7 +151,13 @@ export async function startWorld(container: HTMLElement, base: string): Promise<
   let touch: Placed | null = null
   const nameOf = (id: string): string => art.library.find((x) => x.id === id)?.title ?? 'work'
 
+  const syncVisitors = () => {
+    const point = intro.mountain.readingPoint
+    visitor.sync(art.library, art.layout, point ? { level: 'ground', x: point.x, y: point.y, z: point.z } : null)
+  }
+  void intro.mountain.ready.then(syncVisitors)
   const artSnapshot = () => {
+    syncVisitors()
     const placed: Record<string, number> = {}
     for (const p of art.layout.items) placed[p.art] = (placed[p.art] ?? 0) + 1
     const f = art.focus()
@@ -245,10 +254,14 @@ export async function startWorld(container: HTMLElement, base: string): Promise<
   )
 
   // ---- verbs (GAME.md §1): click = do, E = touch, right click / Q = put back, R = turn, 1-0 = pick, wheel = slide ----------
+  const pendingDoorClosures = new Set<(typeof built.doors)[number]>()
   const toggleDoor = (d = walker.nearestDoor(2.2)): boolean => {
     if (!d) return false
     if (!d.opening.door?.toggle) { bus.toast('locked', 'warn'); return true }
-    d.open = !d.open; return true
+    if (pendingDoorClosures.delete(d)) return true
+    if (d.open && doorOccupied(d, visitor.behavior.agents)) pendingDoorClosures.add(d)
+    else d.open = !d.open
+    return true
   }
   const clickedDoor = (x?: number, y?: number) => {
     if (menuOpen || bigShown || noteOpen || touch || art.held || input.ringOpen) return false
@@ -389,13 +402,17 @@ export async function startWorld(container: HTMLElement, base: string): Promise<
     while (acc >= STEP && steps < 12) { walker.snapshot(); walker.update(STEP); acc -= STEP; steps++ }
     walker.applyCamera(Math.min(1, acc / STEP))
     camera.updateMatrixWorld()
+    for (const door of pendingDoorClosures) if (!doorOccupied(door, visitor.behavior.agents)) {
+      door.open = false; pendingDoorClosures.delete(door)
+    }
     updateDoors(built.doors, dt)
     art.update(dt, elapsed * 6)
+    visitor.update(dt, walker.state, input.settings.reduceMotion, walker.obstacles, built.doors)
     // the click buffer: a click that came just before the ghost turned green still lands
     if (art.held && !touch && art.preview.ok && input.takeClick()) input.onVerb?.('do', new MouseEvent('mousedown'))
     const s = walker.state
     wind.update(s.level, s.x, s.z, s.yaw)
-    if (struck) wind.thunder(looks.void.flashAt, camera.position)
+    if (struck) { wind.thunder(looks.void.flashAt, camera.position); visitor.flash(looks.void.flashAt, camera.position) }
     const locked = s.locked
     // the touch menu follows its work and closes when you walk away
     if (touch) {
@@ -439,15 +456,17 @@ export async function startWorld(container: HTMLElement, base: string): Promise<
       const w = level.walls.find((wall) => wall.id === lookAt.wall)
       if (a && w && lookAt.kind === 'painting') {
         const dx = w.b[0] - w.a[0], dz = w.b[1] - w.a[1], length = Math.hypot(dx, dz) || 1
-        const centre = lookAt.u + a.w / 200
+        const [nx, nz] = facingNormal(w.facing)
+        const left = lookAt.u + (dx * nz - dz * nx < 0 ? a.w / 100 : 0)
         const bottom = floorOf(level, lookAt.level).floorY + lookAt.topY - a.h / 100
-        anchors.set('work', new THREE.Vector3(w.a[0] + dx / length * centre, bottom - 0.08, w.a[1] + dz / length * centre), ours() ? (lookAt.note ? `${lookAt.note.who} · touch` : 'touch') : a.title)
+        anchors.set('work', new THREE.Vector3(w.a[0] + dx / length * left, bottom - 0.04, w.a[1] + dz / length * left), ours() ? (lookAt.note ? `${lookAt.note.who} · touch` : 'touch') : a.title)
       } else if (a && lookAt.pos) {
         const plinthHeight = (art.lookOf(a, lookAt).plinth?.h ?? 0) / 100
         anchors.set('work', new THREE.Vector3(lookAt.pos[0], lookAt.pos[1] + plinthHeight - 0.08, lookAt.pos[2]), ours() ? 'touch' : a.title)
       }
     }
     const sz = renderer.size; anchors.publish(camera, sz.x, sz.y)
+    visitor.prepare(renderer.gl, camera, renderer.composer.readBuffer)
   })
 
   // ---- debug handle + shot(): renders and posts a JPEG to the dev server (docs/sheet) --------------------------------
@@ -473,7 +492,7 @@ export async function startWorld(container: HTMLElement, base: string): Promise<
     walker.teleport(lvl, x, z); walker.state.yaw = THREE.MathUtils.degToRad(yawDeg); walker.state.pitch = THREE.MathUtils.degToRad(pitchDeg); walker.snapshot(); walker.update(0.016); walker.applyCamera(1); camera.updateMatrixWorld()
   }
   ;(window as unknown as { koanHang: unknown }).koanHang = {
-    walker, level, scene, renderer: renderer.gl, composer: renderer.composer, camera, shot, plan, view, THREE, built, toggleDoor, art, loader, bus, roomBVH,
+    walker, level, scene, renderer: renderer.gl, composer: renderer.composer, camera, shot, plan, view, THREE, built, toggleDoor, art, loader, bus, roomBVH, visitor,
     setMode: () => undefined, meshAudit: () => meshAudit(level, built.group), skyLeakAudit: () => skyLeakAudit(level, built.group, built.doors),
     input, feel, quality: (q: 'full' | 'balanced' | 'low') => renderer.setQuality(q), getQuality: () => renderer.quality, smaa: renderer.smaa, looks,
   }
@@ -483,7 +502,7 @@ export async function startWorld(container: HTMLElement, base: string): Promise<
     clearInterval(tick)
     input.onVerb = null; input.onLook = null; input.onPointerUse = null; input.onSlot = null; input.onArrow = null; input.onWheel = null
     for (const bridge of built.bridges) bridge.dispose()
-    wind.dispose(); store.dispose(); input.dispose(); art.dispose(); looks.dispose(); roomGeo.dispose(); loader.dispose(); renderer.dispose()
+    visitor.dispose(); wind.dispose(); store.dispose(); input.dispose(); art.dispose(); looks.dispose(); roomGeo.dispose(); loader.dispose(); renderer.dispose()
   }
   bus.emit('world_ready', { hangWalls: level.walls.filter((w) => w.hang !== false).length, stairs: level.stairs.length, doors: built.doors.length, floors: level.levels.length, eyeCm: Math.round(level.eyeHeight * 100), walls: level.walls.length })
   return { renderer, level, art, walker, dispose }

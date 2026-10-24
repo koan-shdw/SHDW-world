@@ -7,8 +7,8 @@ const path = require('node:path');
 const { DatabaseSync } = require('node:sqlite');
 const root = path.resolve(__dirname, '../..');
 const scratch = fs.mkdtempSync(path.join(os.tmpdir(), 'shdw-test-'));
-require('esbuild').buildSync({ stdin: { contents: `export {default as worker} from './worker/src/index.ts'; export {Store} from './web/src/world/store.ts'; export {ArtSystem} from './web/src/world/art/art.ts'; export {Input} from './web/src/world/input.ts'; export {Walker} from './web/src/world/walk.ts'; export {buildLevel, updateDoors} from './web/src/world/room/level.ts'; export {doorAt} from './web/src/world/doors.ts'; export {sheltered, Wind} from './web/src/world/wind.ts'; export {Void} from './web/src/world/looks/void.ts'; export {Plants} from './web/src/world/looks/plants.ts'; export {EdgesPass} from './web/src/world/looks/edges.ts'; export * as THREE from './web/node_modules/three/build/three.module.js';`, resolveDir: root, loader: 'ts' }, outfile: path.join(scratch, 'project.cjs'), bundle: true, platform: 'node', format: 'cjs', define: { 'import.meta.env.VITE_STORE': '"http://local.test"' }, logLevel: 'silent' });
-const { worker, Store, ArtSystem, Input, Walker, buildLevel, updateDoors, doorAt, sheltered, Wind, Void, Plants, EdgesPass, THREE } = require(path.join(scratch, 'project.cjs'));
+require('esbuild').buildSync({ stdin: { contents: `export {default as worker} from './worker/src/index.ts'; export {Store} from './web/src/world/store.ts'; export {ArtSystem} from './web/src/world/art/art.ts'; export {Input} from './web/src/world/input.ts'; export {Walker} from './web/src/world/walk.ts'; export {buildLevel, updateDoors} from './web/src/world/room/level.ts'; export {doorAt} from './web/src/world/doors.ts'; export {sheltered, Wind} from './web/src/world/wind.ts'; export {Void} from './web/src/world/looks/void.ts'; export {Plants} from './web/src/world/looks/plants.ts'; export {EdgesPass} from './web/src/world/looks/edges.ts'; export {GhostVisitor} from './web/src/world/ghost.ts'; export * as THREE from './web/node_modules/three/build/three.module.js';`, resolveDir: root, loader: 'ts' }, outfile: path.join(scratch, 'project.cjs'), bundle: true, platform: 'node', format: 'cjs', define: { 'import.meta.env.VITE_STORE': '"http://local.test"' }, logLevel: 'silent' });
+const { worker, Store, ArtSystem, Input, Walker, buildLevel, updateDoors, doorAt, sheltered, Wind, Void, Plants, EdgesPass, GhostVisitor, THREE } = require(path.join(scratch, 'project.cjs'));
 after(() => fs.rmSync(scratch, { recursive: true, force: true }));
 const memory = new Map();
 global.localStorage = { getItem: k => memory.get(k) ?? null, setItem: (k, v) => memory.set(k, v), removeItem: k => memory.delete(k) };
@@ -17,6 +17,138 @@ global.document = { addEventListener() {}, removeEventListener() {} };
 const level = JSON.parse(fs.readFileSync(path.join(root, 'level/level.json')));
 const meta = { id: 'test-art', kind: 'painting', title: 'Test', w: 30, h: 30, d: 2, edge: 'wrap', ext: 'png', ts: 1 };
 const placed = { id: 'test-item', art: meta.id, kind: 'painting', wall: 'g-north', level: 'ground', u: 1, topY: 2, snap: null };
+
+test('ghost spectator follows its source artwork identity, placement and floor, and hides when absent', () => {
+  const ghost = new GhostVisitor(level);
+  const source = { ...meta, id: 'my-turn-mtqsqgyy', title: 'MY TURN', w: 91, h: 61 };
+  const copy = { ...placed, art: source.id, wall: 'g-south', u: 2.7, topY: 1.805 };
+  const layout = { items: [copy] };
+  try {
+    assert.equal(ghost.group.visible, false);
+    ghost.sync([{ ...source, id: 'unrelated-work' }], layout);
+    assert.equal(ghost.group.visible, false, 'a matching title is not the source artwork');
+    ghost.sync([{ ...source, title: 'Updated title' }], layout);
+    assert.equal(ghost.group.visible, true, 'renaming the source preserves its visitor');
+    const before = ghost.group.position.clone();
+    assert.ok(before.z > -2.37 && before.y === level.levels.find(f => f.id === 'ground').floorY, 'visitor stands inside the room on the source floor');
+    const centre = new THREE.Vector3(-7.08 + copy.u + source.w / 200, before.y, -2.37);
+    const forward = new THREE.Vector3(0, 0, 1).applyQuaternion(ghost.group.quaternion);
+    assert.ok(forward.dot(centre.sub(before).normalize()) > .999, 'visitor faces the source painting');
+    copy.u += 1; copy.level = 'first';
+    ghost.sync([source], layout);
+    assert.ok(Math.abs(ghost.group.position.x - before.x - 1) < 1e-9, 'moving the artwork moves its spectator');
+    assert.equal(ghost.group.position.y, level.levels.find(f => f.id === 'first').floorY);
+    ghost.sync([source], { items: [] });
+    assert.equal(ghost.group.visible, false, 'taking the source down hides its visitor');
+    ghost.sync([source], layout); ghost.sync([], layout);
+    assert.equal(ghost.group.visible, false, 'removing the source from the library hides its visitor');
+  } finally { ghost.dispose(); }
+});
+
+test('ghost has finite 3D geometry, reduced motion holds a neutral pose, and unique resources are released once', () => {
+  const ghost = new GhostVisitor(level), scene = new THREE.Scene(); scene.add(ghost.group);
+  const source = { ...meta, id: 'my-turn-mtqsqgyy' };
+  ghost.sync([source], { items: [{ ...placed, art: source.id }] });
+  const resources = new Set([ghost.depthTarget, ghost.depthMaterial]); let meshes = 0;
+  ghost.group.traverse(object => {
+    if (!object.isMesh) return;
+    meshes++; resources.add(object.geometry);
+    for (const material of Array.isArray(object.material) ? object.material : [object.material]) resources.add(material);
+    for (const name of ['position', 'normal']) {
+      const attribute = object.geometry.getAttribute(name);
+      if (attribute) assert.ok(attribute.array.every(Number.isFinite), `finite ${name}`);
+    }
+  });
+  assert.ok(meshes > 0);
+  const size = new THREE.Box3().setFromObject(ghost.character.group).getSize(new THREE.Vector3());
+  assert.ok(size.x > .1 && size.y > .1 && size.z > .1, 'the visitor has volume from all sides');
+  const pose = () => { const matrices = []; ghost.group.updateMatrixWorld(true); ghost.group.traverse(o => matrices.push(...o.matrixWorld.elements)); return matrices; };
+  ghost.update(0, true); const neutral = pose();
+  for (let i = 0; i < 90; i++) ghost.update(1 / 30, false);
+  assert.notDeepEqual(pose(), neutral, 'ordinary motion changes the observing pose');
+  ghost.update(1 / 30, true); assert.deepEqual(pose(), neutral, 'reduced motion returns to the neutral pose');
+  ghost.update(20, true); assert.deepEqual(pose(), neutral, 'reduced motion stays still');
+  const disposals = new Map([...resources].map(resource => [resource, 0]));
+  for (const resource of resources) resource.addEventListener('dispose', () => disposals.set(resource, disposals.get(resource) + 1));
+  ghost.dispose(); ghost.dispose();
+  assert.ok([...disposals.values()].every(count => count === 1), 'shared geometry and materials are each released once');
+  assert.equal(scene.children.length, 0); assert.equal(ghost.group.children.length, 0);
+});
+
+test('ghost composites one colour field whose reconstructed coordinates follow moving and turning placements', () => {
+  const ghost = new GhostVisitor(level), camera = new THREE.PerspectiveCamera(70, 16 / 9, .05, 4000);
+  const source = { ...meta, id: 'my-turn-mtqsqgyy', w: 91, h: 61 };
+  const copy = { ...placed, art: source.id, wall: 'g-south' };
+  const layout = { items: [copy] };
+  const renderer = { getRenderTarget: () => null, setRenderTarget() {}, clear() {}, render() {} };
+  try {
+    ghost.sync([source], layout); ghost.update(0, true);
+    const bodies = ghost.depthMeshes.filter(pair => pair.copy.material === ghost.depthMaterial).map(pair => pair.source);
+    assert.ok(bodies.length > 1, 'the independently posed body parts are covered');
+    assert.ok(bodies.every(mesh => mesh.material === bodies[0].material), 'body parts share the mask material');
+    const visible = [];
+    ghost.group.traverse(object => { if (object.isMesh && object.layers.test(camera.layers)) visible.push(object); });
+    assert.deepEqual(visible, [ghost.fill], 'body and contour parts are composited once instead of blending over each other');
+    const surface = ghost.fill.material;
+    assert.ok(surface.isShaderMaterial && surface.transparent && !surface.depthWrite && surface.depthTest, 'the fill respects room occlusion without replacing room depth');
+    assert.equal(surface.uniforms.strokes.value, ghost.depthTarget.texture);
+    assert.equal(surface.uniforms.ghostDepth.value, ghost.depthTarget.depthTexture);
+    const samples = () => {
+      camera.position.copy(ghost.group.position).add(new THREE.Vector3(0, 1, 4));
+      camera.lookAt(ghost.group.position.clone().add(new THREE.Vector3(0, 1, 0)));
+      ghost.prepare(renderer, camera, { width: 1920, height: 1080 });
+      return bodies.map(mesh => {
+        const ndc = new THREE.Vector3().fromBufferAttribute(mesh.geometry.getAttribute('position'), 0).applyMatrix4(mesh.matrixWorld).project(camera);
+        const local = new THREE.Vector4(ndc.x, ndc.y, ndc.z, 1).applyMatrix4(surface.uniforms.clipToGhost.value);
+        return new THREE.Vector3(local.x, local.y, local.z).divideScalar(local.w);
+      });
+    };
+    const before = samples(), previousPosition = ghost.group.position.clone(), previousRotation = ghost.group.rotation.y;
+    copy.wall = 'g-north'; copy.u += 1; copy.level = 'first';
+    ghost.sync([source], layout); ghost.update(0, true);
+    assert.ok(ghost.group.position.distanceTo(previousPosition) > 1);
+    assert.ok(Math.abs(ghost.group.rotation.y - previousRotation) > 1, 'the placement also turns the visitor');
+    samples().forEach((point, i) => assert.ok(point.distanceTo(before[i]) < 1e-8, 'gradient coordinates follow the whole figure without per-part or world-space shifts'));
+  } finally { ghost.dispose(); }
+});
+
+test('ghost self-occlusion uses a bounded private target and restores the scene target on render failure', () => {
+  const ghost = new GhostVisitor(level), camera = new THREE.PerspectiveCamera(70, 1, .05, 4000);
+  const source = { ...meta, id: 'my-turn-mtqsqgyy' };
+  ghost.sync([source], { items: [{ ...placed, art: source.id }] });
+  const previous = new THREE.WebGLRenderTarget(16, 16), calls = [];
+  let target = previous, fail = false;
+  const renderer = {
+    getDrawingBufferSize: out => out.set(3840, 2160), getRenderTarget: () => target,
+    setRenderTarget: next => { target = next; }, clear() {},
+    render: (scene, view) => { calls.push({ scene, view, target }); if (fail) throw new Error('test render failure'); },
+  };
+  try {
+    ghost.prepare(renderer, camera, { width: 1920, height: 1080 });
+    assert.equal(target, previous);
+    assert.equal(calls.length, 1); assert.equal(calls[0].view, camera);
+    assert.deepEqual(ghost.fill.material.uniforms.viewport.value.toArray(), [1920, 1080], 'mask lookup uses composer pixels rather than the larger DPR drawing buffer');
+    const privateTarget = calls[0].target;
+    assert.notEqual(privateTarget, previous);
+    assert.ok(privateTarget.depthTexture && privateTarget.width > 0 && privateTarget.height > 0);
+    assert.ok(Math.max(privateTarget.width, privateTarget.height) <= 1536, 'high-DPI windows keep the extra pass bounded');
+    assert.ok(Math.abs(privateTarget.width / privateTarget.height - 3840 / 2160) < .01);
+    assert.ok(calls[0].scene.children.length > 0);
+    for (const { source: body, copy } of ghost.depthMeshes) {
+      assert.equal(copy.geometry, body.geometry, 'self-occlusion reuses the body geometry');
+      assert.deepEqual(copy.matrix.elements, body.matrixWorld.elements, 'depth rendering follows the posed figure');
+      assert.ok(copy.material.depthTest && copy.material.depthWrite && !copy.material.transparent, 'body and contour masking resolves nearest surfaces before transparency');
+      assert.ok(copy.layers.test(camera.layers) && !body.layers.test(camera.layers), 'only mask copies render in the private scene');
+      assert.equal(copy.material.color.getHex(), copy.material === ghost.depthMaterial ? 0x000000 : 0xffffff, 'the mask distinguishes body fill and visible drawn contours');
+    }
+    fail = true;
+    assert.throws(() => ghost.prepare(renderer, camera), /test render failure/);
+    assert.equal(target, previous, 'failure cannot leave the main exhibition rendering into the ghost target');
+    assert.deepEqual(ghost.fill.material.uniforms.viewport.value.toArray(), [3840, 2160], 'direct rendering falls back to drawing-buffer pixels');
+    ghost.sync([], { items: [] }); ghost.prepare(renderer, camera);
+    assert.equal(calls.length, 2, 'an absent spectator does not render an extra pass');
+  } finally { ghost.dispose(); previous.dispose(); }
+});
 
 test('hedge uses curved leaves, shared wind and shadows, and releases its GPU resources', () => {
   const room = buildLevel(level).group, plants = new Plants(room), again = new Plants(room);

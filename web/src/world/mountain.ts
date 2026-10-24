@@ -57,6 +57,7 @@ void main() {
 export class Mountain {
   readonly group = new THREE.Group()
   readonly opts: MountainOpts
+  readonly ready: Promise<void>
   private tilt = new THREE.Group()
   private mesh: THREE.Mesh | null = null
   private mat: THREE.ShaderMaterial
@@ -80,7 +81,14 @@ export class Mountain {
     this.group.position.set(footX, footY, 0); this.group.rotation.y = -Math.PI / 2   // local +z = toward the yard, +x = reading direction
     this.tilt.rotation.x = -THREE.MathUtils.degToRad(this.opts.lean)                 // the top leans away
     this.group.add(this.tilt)
-    fetch(`${base}brand/helvetica-bold.typeface.json`).then((r) => r.json()).then((json) => this.build(new FontLoader().parse(json))).catch((e) => console.warn('mountain font', e))
+    this.ready = fetch(`${base}brand/helvetica-bold.typeface.json`).then((r) => r.json()).then((json) => this.build(new FontLoader().parse(json))).catch((e) => console.warn('mountain font', e))
+  }
+
+  get readingPoint(): THREE.Vector3 | null {
+    if (!this.mesh) return null
+    if (!this.mesh.geometry.boundingBox) this.mesh.geometry.computeBoundingBox()
+    this.mesh.updateWorldMatrix(true, false)
+    return this.mesh.localToWorld(this.mesh.geometry.boundingBox!.getCenter(new THREE.Vector3()))
   }
 
   private build(font: Font): void {
